@@ -6,6 +6,7 @@ import Dashboard from "./pages/Dashboard";
 import AddMedicine from "./pages/AddMedicine";
 import MyMedicines from "./pages/MyMedicines";
 import EditMedicine from "./pages/EditMedicine";
+import Profile from "./pages/Profile";
 
 function App() {
   return (
@@ -47,7 +48,7 @@ function App() {
 
       <Route
         path="/profile"
-        element={<h1>Profile page is coming next</h1>}
+        element={<Profile />}
       />
 
       <Route

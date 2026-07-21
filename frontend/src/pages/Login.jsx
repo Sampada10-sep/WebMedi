@@ -16,28 +16,46 @@ function Login() {
     setIsLoading(true);
 
     try {
-      const response = await fetch("http://localhost:5000/api/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
-      });
+      const response = await fetch(
+        "http://localhost:5000/api/auth/login",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            password,
+          }),
+        }
+      );
 
       const data = await response.json();
 
       if (response.ok) {
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("user_id", data.user.id);
-        localStorage.setItem("user_name", data.user.name);
-        localStorage.setItem("user_email", data.user.email);
+        const user = data.user;
+
+        if (!user) {
+          setMessage("User information was not returned by the backend.");
+          return;
+        }
+
+        const userName =
+          user.name ||
+          user.full_name ||
+          user.fullName ||
+          "User";
+
+        localStorage.setItem("token", data.token || "");
+        localStorage.setItem("user_id", String(user.id || ""));
+        localStorage.setItem("user_name", userName);
+        localStorage.setItem("user_email", user.email || email);
 
         navigate("/dashboard");
       } else {
-        setMessage(data.message || "Invalid email or password.");
+        setMessage(
+          data.message || "Invalid email or password."
+        );
       }
     } catch (error) {
       console.error("Login error:", error);
@@ -67,7 +85,9 @@ function Login() {
               type="email"
               placeholder="Enter your email"
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event) =>
+                setEmail(event.target.value)
+              }
               style={styles.input}
               required
             />
@@ -83,7 +103,9 @@ function Login() {
               type="password"
               placeholder="Enter your password"
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event) =>
+                setPassword(event.target.value)
+              }
               style={styles.input}
               required
             />
@@ -91,14 +113,20 @@ function Login() {
 
           <button
             type="submit"
-            style={styles.loginButton}
+            style={{
+              ...styles.loginButton,
+              opacity: isLoading ? 0.7 : 1,
+              cursor: isLoading ? "not-allowed" : "pointer",
+            }}
             disabled={isLoading}
           >
             {isLoading ? "Logging in..." : "Login"}
           </button>
         </form>
 
-        {message && <p style={styles.message}>{message}</p>}
+        {message && (
+          <p style={styles.message}>{message}</p>
+        )}
 
         <p style={styles.switchText}>
           Don&apos;t have an account?{" "}
@@ -177,7 +205,6 @@ const styles = {
     color: "#ffffff",
     fontSize: "16px",
     fontWeight: "bold",
-    cursor: "pointer",
   },
 
   message: {
