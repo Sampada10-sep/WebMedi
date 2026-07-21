@@ -5,6 +5,7 @@ import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import AddMedicine from "./pages/AddMedicine";
 import MyMedicines from "./pages/MyMedicines";
+import EditMedicine from "./pages/EditMedicine";
 
 function App() {
   return (
@@ -14,11 +15,20 @@ function App() {
         element={<Navigate to="/login" replace />}
       />
 
-      <Route path="/login" element={<Login />} />
+      <Route
+        path="/login"
+        element={<Login />}
+      />
 
-      <Route path="/register" element={<Register />} />
+      <Route
+        path="/register"
+        element={<Register />}
+      />
 
-      <Route path="/dashboard" element={<Dashboard />} />
+      <Route
+        path="/dashboard"
+        element={<Dashboard />}
+      />
 
       <Route
         path="/add-medicine"
@@ -28,6 +38,11 @@ function App() {
       <Route
         path="/medicines"
         element={<MyMedicines />}
+      />
+
+      <Route
+        path="/edit-medicine/:id"
+        element={<EditMedicine />}
       />
 
       <Route
