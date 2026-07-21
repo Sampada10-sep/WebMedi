@@ -1,87 +1,219 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
+const API_URL = "http://localhost:5000/api/medicines";
 
 function MyMedicines() {
   const navigate = useNavigate();
 
   const [medicines, setMedicines] = useState([]);
+  const [searchText, setSearchText] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
+
   const [message, setMessage] = useState("Loading medicines...");
   const [isLoading, setIsLoading] = useState(true);
 
+  const [updatingMedicineId, setUpdatingMedicineId] = useState(null);
+  const [selectedMedicineId, setSelectedMedicineId] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   useEffect(() => {
+    const controller = new AbortController();
+
     const fetchMedicines = async () => {
       try {
-        const response = await fetch(
-          "http://localhost:5000/api/medicines"
-        );
+        setIsLoading(true);
+
+        const response = await fetch(API_URL, {
+          signal: controller.signal,
+        });
 
         const data = await response.json();
 
-        if (response.ok) {
-          setMedicines(data.medicines || []);
-
-          if (data.medicines && data.medicines.length > 0) {
-            setMessage("");
-          } else {
-            setMessage("No medicines found.");
-          }
-        } else {
-          setMessage(data.message || "Failed to load medicines.");
+        if (!response.ok) {
+          throw new Error(data.message || "Failed to load medicines.");
         }
+
+        const medicineList = data.medicines || [];
+
+        setMedicines(medicineList);
+        setMessage(
+          medicineList.length === 0 ? "No medicines found." : ""
+        );
       } catch (error) {
-        console.error("Fetch medicines error:", error);
-        setMessage("Cannot connect to the backend.");
+        if (error.name !== "AbortError") {
+          console.error("Fetch medicines error:", error);
+          setMessage("Cannot connect to the backend.");
+        }
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchMedicines();
+
+    return () => controller.abort();
   }, []);
 
-  const handleDelete = async (id) => {
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this medicine?"
-    );
+  const filteredMedicines = useMemo(() => {
+    const searchValue = searchText.trim().toLowerCase();
 
-    if (!confirmed) {
+    return medicines.filter((medicine) => {
+      const medicineName =
+        medicine.medicine_name?.toLowerCase() || "";
+
+      const dosage = medicine.dosage?.toLowerCase() || "";
+      const description =
+        medicine.description?.toLowerCase() || "";
+
+      const matchesSearch =
+        medicineName.includes(searchValue) ||
+        dosage.includes(searchValue) ||
+        description.includes(searchValue);
+
+      const matchesStatus =
+        statusFilter === "All" ||
+        medicine.status?.toLowerCase() ===
+          statusFilter.toLowerCase();
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [medicines, searchText, statusFilter]);
+
+  const showTemporaryMessage = (text) => {
+    setMessage(text);
+
+    window.setTimeout(() => {
+      setMessage("");
+    }, 2500);
+  };
+
+  const updateMedicineStatus = async (medicine, newStatus) => {
+    try {
+      setUpdatingMedicineId(medicine.id);
+      setMessage("");
+
+      const response = await fetch(`${API_URL}/${medicine.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          medicine_name: medicine.medicine_name,
+          dosage: medicine.dosage,
+          description: medicine.description || "",
+          reminder_time: medicine.reminder_time,
+          start_date: medicine.start_date,
+          end_date: medicine.end_date,
+          status: newStatus,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.message || "Failed to update medicine status."
+        );
+      }
+
+      setMedicines((currentMedicines) =>
+        currentMedicines.map((currentMedicine) =>
+          Number(currentMedicine.id) === Number(medicine.id)
+            ? {
+                ...currentMedicine,
+                status: newStatus,
+              }
+            : currentMedicine
+        )
+      );
+
+      showTemporaryMessage(
+        `Medicine status changed to ${newStatus}.`
+      );
+    } catch (error) {
+      console.error("Update medicine status error:", error);
+
+      setMessage(
+        error.message || "Cannot connect to the backend."
+      );
+    } finally {
+      setUpdatingMedicineId(null);
+    }
+  };
+
+  const openDeleteModal = (medicineId) => {
+    setSelectedMedicineId(medicineId);
+    setShowDeleteModal(true);
+  };
+
+  const closeDeleteModal = () => {
+    if (isDeleting) {
+      return;
+    }
+
+    setShowDeleteModal(false);
+    setSelectedMedicineId(null);
+  };
+
+  const handleDelete = async () => {
+    if (!selectedMedicineId) {
       return;
     }
 
     try {
+      setIsDeleting(true);
+      setMessage("");
+
       const response = await fetch(
-        `http://localhost:5000/api/medicines/${id}`,
+        `${API_URL}/${selectedMedicineId}`,
         {
           method: "DELETE",
         }
       );
 
-      const data = await response.json();
+      let data = {};
 
-      if (response.ok) {
-        setMedicines((currentMedicines) =>
-          currentMedicines.filter(
-            (medicine) => medicine.id !== id
-          )
-        );
-
-        setMessage("Medicine deleted successfully.");
-
-        setTimeout(() => {
-          setMessage("");
-        }, 2000);
-      } else {
-        setMessage(data.message || "Failed to delete medicine.");
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
       }
+
+      if (!response.ok) {
+        throw new Error(
+          data.message || "Failed to delete medicine."
+        );
+      }
+
+      setMedicines((currentMedicines) =>
+        currentMedicines.filter(
+          (medicine) =>
+            Number(medicine.id) !== Number(selectedMedicineId)
+        )
+      );
+
+      setShowDeleteModal(false);
+      setSelectedMedicineId(null);
+      showTemporaryMessage("Medicine deleted successfully.");
     } catch (error) {
       console.error("Delete medicine error:", error);
-      setMessage("Cannot connect to the backend.");
+
+      setMessage(
+        error.message || "Cannot connect to the backend."
+      );
+
+      setShowDeleteModal(false);
+      setSelectedMedicineId(null);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
   const formatDate = (dateValue) => {
     if (!dateValue) {
-      return "";
+      return "—";
     }
 
     return new Date(dateValue).toLocaleDateString("en-GB");
@@ -89,22 +221,44 @@ function MyMedicines() {
 
   const formatTime = (timeValue) => {
     if (!timeValue) {
-      return "";
+      return "—";
     }
 
-    const timeParts = timeValue.split(":");
-    const hours = Number(timeParts[0]);
-    const minutes = Number(timeParts[1]);
+    const [hours, minutes] = timeValue.split(":");
 
     const date = new Date();
-    date.setHours(hours);
-    date.setMinutes(minutes);
-    date.setSeconds(0);
+    date.setHours(Number(hours), Number(minutes), 0);
 
     return date.toLocaleTimeString("en-GB", {
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
+
+  const getStatusStyle = (status) => {
+    const value = status?.toLowerCase();
+
+    if (value === "completed") {
+      return {
+        ...styles.statusSelect,
+        backgroundColor: "#dbeafe",
+        color: "#1d4ed8",
+      };
+    }
+
+    if (value === "inactive") {
+      return {
+        ...styles.statusSelect,
+        backgroundColor: "#f3f4f6",
+        color: "#4b5563",
+      };
+    }
+
+    return {
+      ...styles.statusSelect,
+      backgroundColor: "#dcfce7",
+      color: "#166534",
+    };
   };
 
   return (
@@ -115,11 +269,11 @@ function MyMedicines() {
             <h1 style={styles.title}>My Medicines</h1>
 
             <p style={styles.subtitle}>
-              View, edit, and delete your medicine reminders.
+              Search, filter, edit and manage your medicines.
             </p>
           </div>
 
-          <div style={styles.buttonGroup}>
+          <div style={styles.topButtons}>
             <button
               type="button"
               style={styles.backButton}
@@ -138,94 +292,197 @@ function MyMedicines() {
           </div>
         </div>
 
-        {message && (
-          <div style={styles.messageBox}>
-            {message}
+        <div style={styles.filterSection}>
+          <input
+            type="search"
+            placeholder="Search medicine, dosage or description..."
+            value={searchText}
+            onChange={(event) =>
+              setSearchText(event.target.value)
+            }
+            style={styles.searchInput}
+          />
+
+          <div style={styles.filterButtons}>
+            {["All", "Active", "Completed", "Inactive"].map(
+              (status) => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => setStatusFilter(status)}
+                  style={{
+                    ...styles.filterButton,
+                    ...(statusFilter === status
+                      ? styles.activeFilterButton
+                      : {}),
+                  }}
+                >
+                  {status}
+                </button>
+              )
+            )}
           </div>
+        </div>
+                {message && (
+          <div style={styles.messageBox}>{message}</div>
         )}
 
-        {!isLoading && medicines.length > 0 && (
-          <div style={styles.tableWrapper}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.tableHeader}>Medicine</th>
-                  <th style={styles.tableHeader}>Dosage</th>
-                  <th style={styles.tableHeader}>Time</th>
-                  <th style={styles.tableHeader}>Start Date</th>
-                  <th style={styles.tableHeader}>End Date</th>
-                  <th style={styles.tableHeader}>Status</th>
-                  <th style={styles.tableHeader}>Actions</th>
-                </tr>
-              </thead>
+        {isLoading ? (
+          <div style={styles.emptyState}>
+            <h3 style={styles.emptyTitle}>Loading medicines...</h3>
+          </div>
+        ) : filteredMedicines.length === 0 ? (
+          <div style={styles.emptyState}>
+            <h3 style={styles.emptyTitle}>
+              No medicines found
+            </h3>
 
-              <tbody>
-                {medicines.map((medicine) => (
-                  <tr key={medicine.id}>
-                    <td style={styles.tableCell}>
-                      <strong>
-                        {medicine.medicine_name}
-                      </strong>
+            <p style={styles.emptyText}>
+              Try changing your search or filter.
+            </p>
+          </div>
+        ) : (
+          <div style={styles.grid}>
+            {filteredMedicines.map((medicine) => (
+              <div key={medicine.id} style={styles.card}>
+                <div style={styles.cardHeader}>
+                  <div>
+                    <h2 style={styles.medicineName}>
+                      {medicine.medicine_name}
+                    </h2>
 
-                      <div style={styles.description}>
-                        {medicine.description}
-                      </div>
-                    </td>
+                    <p style={styles.dosage}>
+                      {medicine.dosage || "No dosage provided"}
+                    </p>
+                  </div>
 
-                    <td style={styles.tableCell}>
-                      {medicine.dosage}
-                    </td>
+                  <select
+                    value={medicine.status || "Active"}
+                    disabled={
+                      updatingMedicineId === medicine.id
+                    }
+                    onChange={(event) =>
+                      updateMedicineStatus(
+                        medicine,
+                        event.target.value
+                      )
+                    }
+                    style={getStatusStyle(medicine.status)}
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Completed">
+                      Completed
+                    </option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
 
-                    <td style={styles.tableCell}>
+                <div style={styles.details}>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>
+                      Reminder Time
+                    </span>
+
+                    <span style={styles.detailValue}>
                       {formatTime(medicine.reminder_time)}
-                    </td>
+                    </span>
+                  </div>
 
-                    <td style={styles.tableCell}>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>
+                      Start Date
+                    </span>
+
+                    <span style={styles.detailValue}>
                       {formatDate(medicine.start_date)}
-                    </td>
+                    </span>
+                  </div>
 
-                    <td style={styles.tableCell}>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>
+                      End Date
+                    </span>
+
+                    <span style={styles.detailValue}>
                       {formatDate(medicine.end_date)}
-                    </td>
+                    </span>
+                  </div>
+                </div>
 
-                    <td style={styles.tableCell}>
-                      <span style={styles.statusBadge}>
-                        {medicine.status}
-                      </span>
-                    </td>
+                <div style={styles.descriptionSection}>
+                  <p style={styles.descriptionLabel}>
+                    Description
+                  </p>
 
-                    <td style={styles.tableCell}>
-                      <div style={styles.actionButtons}>
-                        <button
-                          type="button"
-                          style={styles.editButton}
-                          onClick={() =>
-                            navigate(
-                              `/edit-medicine/${medicine.id}`
-                            )
-                          }
-                        >
-                          Edit
-                        </button>
+                  <p style={styles.description}>
+                    {medicine.description ||
+                      "No description provided."}
+                  </p>
+                </div>
 
-                        <button
-                          type="button"
-                          style={styles.deleteButton}
-                          onClick={() =>
-                            handleDelete(medicine.id)
-                          }
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                <div style={styles.cardButtons}>
+                  <button
+                    type="button"
+                    style={styles.editButton}
+                    onClick={() =>
+                      navigate(
+                        `/edit-medicine/${medicine.id}`
+                      )
+                    }
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    type="button"
+                    style={styles.deleteButton}
+                    onClick={() =>
+                      openDeleteModal(medicine.id)
+                    }
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
+
+      {showDeleteModal && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modal}>
+            <h2 style={styles.modalTitle}>
+              Delete Medicine
+            </h2>
+
+            <p style={styles.modalText}>
+              Are you sure you want to delete this medicine?
+              This action cannot be undone.
+            </p>
+
+            <div style={styles.modalButtons}>
+              <button
+                type="button"
+                style={styles.cancelButton}
+                onClick={closeDeleteModal}
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                style={styles.confirmDeleteButton}
+                onClick={handleDelete}
+                disabled={isDeleting}
+              >
+                {isDeleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -233,7 +490,7 @@ function MyMedicines() {
 const styles = {
   page: {
     minHeight: "100vh",
-    backgroundColor: "#f4f7fb",
+    backgroundColor: "#f5f7fb",
     padding: "40px 20px",
     fontFamily: "Arial, sans-serif",
   },
@@ -247,125 +504,302 @@ const styles = {
   topBar: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: "20px",
     flexWrap: "wrap",
     marginBottom: "30px",
   },
 
   title: {
-    margin: 0,
+    margin: "0",
     color: "#1f2937",
-    fontSize: "32px",
+    fontSize: "36px",
+    fontWeight: "700",
   },
 
   subtitle: {
-    margin: "8px 0 0",
+    marginTop: "8px",
+    marginBottom: "0",
     color: "#6b7280",
+    fontSize: "16px",
   },
 
-  buttonGroup: {
+  topButtons: {
     display: "flex",
     gap: "12px",
     flexWrap: "wrap",
   },
 
   backButton: {
-    padding: "11px 18px",
-    border: "1px solid #4f46e5",
-    borderRadius: "8px",
+    border: "1px solid #d1d5db",
     backgroundColor: "#ffffff",
-    color: "#4f46e5",
+    color: "#374151",
+    padding: "11px 18px",
+    borderRadius: "10px",
     cursor: "pointer",
-    fontWeight: "bold",
+    fontSize: "14px",
+    fontWeight: "600",
   },
 
   addButton: {
-    padding: "11px 18px",
     border: "none",
-    borderRadius: "8px",
-    backgroundColor: "#4f46e5",
+    backgroundColor: "#6366f1",
     color: "#ffffff",
+    padding: "12px 20px",
+    borderRadius: "10px",
     cursor: "pointer",
-    fontWeight: "bold",
+    fontSize: "14px",
+    fontWeight: "600",
+  },
+
+  filterSection: {
+    backgroundColor: "#ffffff",
+    borderRadius: "16px",
+    padding: "20px",
+    marginBottom: "24px",
+    boxShadow: "0 6px 20px rgba(0, 0, 0, 0.06)",
+  },
+
+  searchInput: {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "13px 15px",
+    border: "1px solid #d1d5db",
+    borderRadius: "10px",
+    fontSize: "15px",
+    outline: "none",
+    marginBottom: "16px",
+  },
+
+  filterButtons: {
+    display: "flex",
+    gap: "10px",
+    flexWrap: "wrap",
+  },
+
+  filterButton: {
+    border: "1px solid #d1d5db",
+    backgroundColor: "#ffffff",
+    color: "#4b5563",
+    padding: "9px 16px",
+    borderRadius: "20px",
+    cursor: "pointer",
+    fontSize: "14px",
+    fontWeight: "600",
+  },
+
+  activeFilterButton: {
+    backgroundColor: "#6366f1",
+    borderColor: "#6366f1",
+    color: "#ffffff",
   },
 
   messageBox: {
-    padding: "14px",
-    marginBottom: "20px",
     backgroundColor: "#eef2ff",
-    color: "#3730a3",
-    borderRadius: "8px",
-    textAlign: "center",
-    fontWeight: "bold",
+    color: "#4338ca",
+    padding: "14px 18px",
+    borderRadius: "10px",
+    marginBottom: "20px",
+    fontSize: "14px",
+    fontWeight: "600",
   },
 
-  tableWrapper: {
-    overflowX: "auto",
+  grid: {
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(310px, 1fr))",
+    gap: "22px",
+  },
+
+  card: {
     backgroundColor: "#ffffff",
-    borderRadius: "14px",
-    boxShadow: "0 8px 25px rgba(0, 0, 0, 0.08)",
+    borderRadius: "16px",
+    padding: "22px",
+    boxShadow: "0 6px 22px rgba(0, 0, 0, 0.07)",
+    border: "1px solid #eef0f4",
   },
 
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-    minWidth: "950px",
+  cardHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: "12px",
+    marginBottom: "20px",
   },
 
-  tableHeader: {
-    padding: "16px",
-    backgroundColor: "#4f46e5",
-    color: "#ffffff",
-    textAlign: "left",
+  medicineName: {
+    margin: "0",
+    color: "#1f2937",
+    fontSize: "22px",
+    fontWeight: "700",
   },
 
-  tableCell: {
-    padding: "16px",
-    borderBottom: "1px solid #e5e7eb",
+  dosage: {
+    marginTop: "6px",
+    marginBottom: "0",
+    color: "#6b7280",
+    fontSize: "14px",
+  },
+
+  statusSelect: {
+    border: "none",
+    borderRadius: "20px",
+    padding: "8px 10px",
+    fontSize: "13px",
+    fontWeight: "700",
+    cursor: "pointer",
+    outline: "none",
+  },
+
+  details: {
+    borderTop: "1px solid #eeeeee",
+    borderBottom: "1px solid #eeeeee",
+    padding: "14px 0",
+  },
+
+  detailRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "16px",
+    marginBottom: "10px",
+  },
+
+  detailLabel: {
+    color: "#6b7280",
+    fontSize: "14px",
+  },
+
+  detailValue: {
+    color: "#1f2937",
+    fontSize: "14px",
+    fontWeight: "600",
+  },
+
+  descriptionSection: {
+    marginTop: "16px",
+  },
+
+  descriptionLabel: {
+    margin: "0 0 7px",
     color: "#374151",
-    verticalAlign: "top",
+    fontSize: "14px",
+    fontWeight: "700",
   },
 
   description: {
-    marginTop: "5px",
+    margin: "0",
     color: "#6b7280",
-    fontSize: "13px",
+    fontSize: "14px",
+    lineHeight: "1.6",
+    minHeight: "44px",
   },
 
-  statusBadge: {
-    display: "inline-block",
-    padding: "6px 10px",
-    borderRadius: "20px",
-    backgroundColor: "#dcfce7",
-    color: "#166534",
-    fontSize: "13px",
-    fontWeight: "bold",
-  },
-
-  actionButtons: {
+  cardButtons: {
     display: "flex",
-    gap: "8px",
+    gap: "12px",
+    marginTop: "20px",
   },
 
   editButton: {
-    padding: "8px 12px",
+    flex: "1",
     border: "none",
-    borderRadius: "6px",
-    backgroundColor: "#f59e0b",
-    color: "#ffffff",
+    backgroundColor: "#e0e7ff",
+    color: "#4338ca",
+    padding: "11px",
+    borderRadius: "9px",
     cursor: "pointer",
-    fontWeight: "bold",
+    fontWeight: "700",
   },
 
   deleteButton: {
-    padding: "8px 12px",
+    flex: "1",
     border: "none",
-    borderRadius: "6px",
-    backgroundColor: "#ef4444",
-    color: "#ffffff",
+    backgroundColor: "#fee2e2",
+    color: "#b91c1c",
+    padding: "11px",
+    borderRadius: "9px",
     cursor: "pointer",
-    fontWeight: "bold",
+    fontWeight: "700",
+  },
+
+  emptyState: {
+    backgroundColor: "#ffffff",
+    textAlign: "center",
+    padding: "60px 20px",
+    borderRadius: "16px",
+    boxShadow: "0 6px 20px rgba(0, 0, 0, 0.05)",
+  },
+
+  emptyTitle: {
+    margin: "0 0 8px",
+    color: "#1f2937",
+    fontSize: "22px",
+  },
+
+  emptyText: {
+    margin: "0",
+    color: "#6b7280",
+    fontSize: "15px",
+  },
+
+  modalOverlay: {
+    position: "fixed",
+    inset: "0",
+    backgroundColor: "rgba(17, 24, 39, 0.55)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "20px",
+    zIndex: "1000",
+  },
+
+  modal: {
+    width: "100%",
+    maxWidth: "430px",
+    backgroundColor: "#ffffff",
+    borderRadius: "16px",
+    padding: "28px",
+    boxShadow: "0 20px 50px rgba(0, 0, 0, 0.2)",
+  },
+
+  modalTitle: {
+    margin: "0 0 12px",
+    color: "#1f2937",
+    fontSize: "24px",
+  },
+
+  modalText: {
+    margin: "0",
+    color: "#6b7280",
+    lineHeight: "1.6",
+    fontSize: "15px",
+  },
+
+  modalButtons: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "12px",
+    marginTop: "24px",
+  },
+
+  cancelButton: {
+    border: "1px solid #d1d5db",
+    backgroundColor: "#ffffff",
+    color: "#374151",
+    padding: "10px 18px",
+    borderRadius: "9px",
+    cursor: "pointer",
+    fontWeight: "600",
+  },
+
+  confirmDeleteButton: {
+    border: "none",
+    backgroundColor: "#dc2626",
+    color: "#ffffff",
+    padding: "10px 18px",
+    borderRadius: "9px",
+    cursor: "pointer",
+    fontWeight: "600",
   },
 };
 
