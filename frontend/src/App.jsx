@@ -1,45 +1,45 @@
-import { useState } from "react";
+import { Navigate, Route, Routes } from "react-router-dom";
+
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
-import "./App.css";
+import AddMedicine from "./pages/AddMedicine";
+import MyMedicines from "./pages/MyMedicines";
 
 function App() {
-  const savedToken = localStorage.getItem("token");
-
-  const [currentPage, setCurrentPage] = useState(
-    savedToken ? "dashboard" : "login"
-  );
-
-  const handleLoginSuccess = () => {
-    setCurrentPage("dashboard");
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    setCurrentPage("login");
-  };
-
-  if (currentPage === "login") {
-    return (
-      <Login
-        onLoginSuccess={handleLoginSuccess}
-        onSwitchToRegister={() => setCurrentPage("register")}
-      />
-    );
-  }
-
-  if (currentPage === "register") {
-    return (
-      <Register onSwitchToLogin={() => setCurrentPage("login")} />
-    );
-  }
-
   return (
-    <Dashboard
-      onNavigate={setCurrentPage}
-      onLogout={handleLogout}
-    />
+    <Routes>
+      <Route
+        path="/"
+        element={<Navigate to="/login" replace />}
+      />
+
+      <Route path="/login" element={<Login />} />
+
+      <Route path="/register" element={<Register />} />
+
+      <Route path="/dashboard" element={<Dashboard />} />
+
+      <Route
+        path="/add-medicine"
+        element={<AddMedicine />}
+      />
+
+      <Route
+        path="/medicines"
+        element={<MyMedicines />}
+      />
+
+      <Route
+        path="/profile"
+        element={<h1>Profile page is coming next</h1>}
+      />
+
+      <Route
+        path="*"
+        element={<h1>Page not found</h1>}
+      />
+    </Routes>
   );
 }
 
