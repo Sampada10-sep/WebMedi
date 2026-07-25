@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
 
 const CHANGE_PASSWORD_URL =
-  "http://localhost:5000/api/auth/change-password";
+  "https://medireminder-backend-un9x.onrender.com/api/auth/change-password";
 
 function Profile() {
   const navigate = useNavigate();

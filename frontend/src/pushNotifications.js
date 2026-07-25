@@ -1,4 +1,4 @@
-const API_URL = "http://localhost:5000";
+const API_URL = "https://medireminder-backend-un9x.onrender.com";
 
 function urlBase64ToUint8Array(base64String) {
   const padding = "=".repeat(

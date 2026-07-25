@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-const API_URL = "http://localhost:5000/api/medicines";
+const API_URL = "https://medireminder-backend-un9x.onrender.com/api/medicines";
 
 function MyMedicines() {
   const navigate = useNavigate();

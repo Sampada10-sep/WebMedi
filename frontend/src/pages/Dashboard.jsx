@@ -72,7 +72,7 @@ function Dashboard() {
   const loadMedicines = useCallback(async (signal) => {
     try {
       const response = await fetch(
-        "http://localhost:5000/api/medicines",
+        "https://medireminder-backend-un9x.onrender.com/api/medicines",
         {
           signal,
           cache: "no-store",

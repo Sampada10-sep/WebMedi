@@ -43,7 +43,7 @@ function AddMedicine() {
 
     try {
       const response = await fetch(
-        "http://localhost:5000/api/medicines",
+        "https://medireminder-backend-un9x.onrender.com/api/medicines",
         {
           method: "POST",
           headers: {

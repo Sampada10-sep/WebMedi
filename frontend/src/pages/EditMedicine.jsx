@@ -39,7 +39,7 @@ function EditMedicine() {
     const fetchMedicine = async () => {
       try {
         const response = await fetch(
-          `http://localhost:5000/api/medicines/${id}`
+          `https://medireminder-backend-un9x.onrender.com/api/medicines/${id}`
         );
 
         const data = await response.json();
@@ -102,7 +102,7 @@ function EditMedicine() {
 
     try {
       const response = await fetch(
-        `http://localhost:5000/api/medicines/${id}`,
+        `https://medireminder-backend-un9x.onrender.com/api/medicines/${id}`,
         {
           method: "PUT",
           headers: {
