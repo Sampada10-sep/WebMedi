@@ -55,7 +55,7 @@ app.get("/api/push/public-key", (req, res) => {
 });
 
 // ========================================
-// SAVE PUSH SUBSCRIPTION TO POSTGRESQL
+// SAVE PUSH SUBSCRIPTION
 // ========================================
 
 app.post("/api/push/subscribe", async (req, res) => {
@@ -84,7 +84,6 @@ app.post("/api/push/subscribe", async (req, res) => {
     const p256dh = subscription.keys.p256dh;
     const auth = subscription.keys.auth;
 
-    // Save new subscription or update an existing endpoint.
     await pool.query(
       `
       INSERT INTO push_subscriptions
@@ -107,8 +106,7 @@ app.post("/api/push/subscribe", async (req, res) => {
     );
 
     res.status(201).json({
-      message:
-        "Push subscription saved permanently",
+      message: "Push subscription saved permanently",
     });
   } catch (error) {
     console.error(
@@ -117,8 +115,7 @@ app.post("/api/push/subscribe", async (req, res) => {
     );
 
     res.status(500).json({
-      message:
-        "Failed to save push subscription",
+      message: "Failed to save push subscription",
       error: error.message,
     });
   }
@@ -159,8 +156,7 @@ app.post(
       );
 
       res.json({
-        message:
-          "Push subscription removed",
+        message: "Push subscription removed",
       });
     } catch (error) {
       console.error(
@@ -169,8 +165,7 @@ app.post(
       );
 
       res.status(500).json({
-        message:
-          "Failed to remove subscription",
+        message: "Failed to remove subscription",
         error: error.message,
       });
     }
@@ -211,12 +206,9 @@ app.post(
 
       const payload = JSON.stringify({
         title: "💊 MediReminder",
-
         body:
           "Background push notifications are working!",
-
         tag: `test-${Date.now()}`,
-
         url: "/dashboard",
       });
 
@@ -248,7 +240,6 @@ app.post(
             error.message
           );
 
-          // Remove expired browser subscriptions.
           if (
             error.statusCode === 404 ||
             error.statusCode === 410
@@ -280,8 +271,7 @@ app.post(
       );
 
       res.status(500).json({
-        message:
-          "Failed to send test push",
+        message: "Failed to send test push",
         error: error.message,
       });
     }
@@ -292,249 +282,225 @@ app.post(
 // AUTOMATIC MEDICINE REMINDER
 // ========================================
 
-// Prevent duplicate reminders while this server
-// process is running.
 const sentReminders = new Set();
 
-cron.schedule("* * * * *", async () => {
-  try {
-    const now = new Date();
+if (process.env.NODE_ENV !== "test") {
+  cron.schedule("* * * * *", async () => {
+    try {
+      const now = new Date();
 
-    const currentDate = [
-      now.getFullYear(),
-      String(now.getMonth() + 1).padStart(2, "0"),
-      String(now.getDate()).padStart(2, "0"),
-    ].join("-");
+      const currentDate = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, "0"),
+        String(now.getDate()).padStart(2, "0"),
+      ].join("-");
 
-    const currentTime = [
-      String(now.getHours()).padStart(2, "0"),
-      String(now.getMinutes()).padStart(2, "0"),
-    ].join(":");
+      const currentTime = [
+        String(now.getHours()).padStart(2, "0"),
+        String(now.getMinutes()).padStart(2, "0"),
+      ].join(":");
 
-    console.log(
-      `⏰ Checking reminders: ${currentDate} ${currentTime}`
-    );
-
-    // Get active medicines.
-    const medicineResult = await pool.query(`
-      SELECT *
-      FROM medicines
-      WHERE LOWER(
-        COALESCE(status, 'active')
-      ) = 'active'
-    `);
-
-    const medicines = medicineResult.rows;
-
-    for (const medicine of medicines) {
-      if (!medicine.reminder_time) {
-        continue;
-      }
-
-      const reminderTime = String(
-        medicine.reminder_time
-      ).substring(0, 5);
-
-      // ========================================
-      // CHECK START AND END DATE
-      // ========================================
-
-      let startDate = null;
-      let endDate = null;
-
-      if (medicine.start_date) {
-        startDate = new Date(
-          medicine.start_date
-        )
-          .toISOString()
-          .split("T")[0];
-      }
-
-      if (medicine.end_date) {
-        endDate = new Date(
-          medicine.end_date
-        )
-          .toISOString()
-          .split("T")[0];
-      }
-
-      if (
-        startDate &&
-        currentDate < startDate
-      ) {
-        continue;
-      }
-
-      if (
-        endDate &&
-        currentDate > endDate
-      ) {
-        continue;
-      }
-
-      // ========================================
-      // CHECK MEDICINE TIME
-      // ========================================
-
-      const [
-        reminderHour,
-        reminderMinute,
-      ] = reminderTime
-        .split(":")
-        .map(Number);
-
-      const reminderDateTime =
-        new Date(now);
-
-      reminderDateTime.setHours(
-        reminderHour,
-        reminderMinute,
-        0,
-        0
+      console.log(
+        `⏰ Checking reminders: ${currentDate} ${currentTime}`
       );
 
-      const differenceInMinutes =
-        (now.getTime() -
-          reminderDateTime.getTime()) /
-        60000;
+      const medicineResult = await pool.query(`
+        SELECT *
+        FROM medicines
+        WHERE LOWER(
+          COALESCE(status, 'active')
+        ) = 'active'
+      `);
 
-      // Allow up to 2 minutes late.
-      if (
-        differenceInMinutes < 0 ||
-        differenceInMinutes > 2
-      ) {
-        continue;
-      }
+      const medicines = medicineResult.rows;
 
-      // Use the scheduled medicine time in the
-      // key, not currentTime. This prevents the
-      // same medicine from being sent again at
-      // +1 and +2 minutes.
-      const reminderKey =
-        `${medicine.id}-${currentDate}-${reminderTime}`;
+      for (const medicine of medicines) {
+        if (!medicine.reminder_time) {
+          continue;
+        }
 
-      if (
-        sentReminders.has(reminderKey)
-      ) {
-        continue;
-      }
+        const reminderTime = String(
+          medicine.reminder_time
+        ).substring(0, 5);
 
-      // ========================================
-      // GET USER'S SAVED PUSH SUBSCRIPTIONS
-      // ========================================
+        let startDate = null;
+        let endDate = null;
 
-      const subscriptionResult =
-        await pool.query(
-          `
-          SELECT *
-          FROM push_subscriptions
-          WHERE user_id = $1
-          `,
-          [medicine.user_id]
+        if (medicine.start_date) {
+          startDate = new Date(
+            medicine.start_date
+          )
+            .toISOString()
+            .split("T")[0];
+        }
+
+        if (medicine.end_date) {
+          endDate = new Date(
+            medicine.end_date
+          )
+            .toISOString()
+            .split("T")[0];
+        }
+
+        if (
+          startDate &&
+          currentDate < startDate
+        ) {
+          continue;
+        }
+
+        if (
+          endDate &&
+          currentDate > endDate
+        ) {
+          continue;
+        }
+
+        const [
+          reminderHour,
+          reminderMinute,
+        ] = reminderTime
+          .split(":")
+          .map(Number);
+
+        const reminderDateTime =
+          new Date(now);
+
+        reminderDateTime.setHours(
+          reminderHour,
+          reminderMinute,
+          0,
+          0
         );
 
-      if (
-        subscriptionResult.rows.length === 0
-      ) {
-        console.log(
-          `⚠️ No saved push subscription for user ${medicine.user_id}`
-        );
+        const differenceInMinutes =
+          (now.getTime() -
+            reminderDateTime.getTime()) /
+          60000;
 
-        continue;
-      }
+        if (
+          differenceInMinutes < 0 ||
+          differenceInMinutes > 2
+        ) {
+          continue;
+        }
 
-      const payload = JSON.stringify({
-        title:
-          "💊 Medicine Reminder",
+        const reminderKey =
+          `${medicine.id}-${currentDate}-${reminderTime}`;
 
-        body: `Time to take ${
-          medicine.medicine_name ||
-          "your medicine"
-        } — ${
-          medicine.dosage ||
-          "Dosage not specified"
-        }`,
+        if (
+          sentReminders.has(reminderKey)
+        ) {
+          continue;
+        }
 
-        tag: reminderKey,
-
-        url: "/dashboard",
-      });
-
-      let atLeastOneSent = false;
-
-      // Send to every browser/device registered
-      // by this user.
-      for (
-        const row of subscriptionResult.rows
-      ) {
-        const subscription = {
-          endpoint: row.endpoint,
-
-          keys: {
-            p256dh: row.p256dh,
-            auth: row.auth,
-          },
-        };
-
-        try {
-          await webpush.sendNotification(
-            subscription,
-            payload
+        const subscriptionResult =
+          await pool.query(
+            `
+            SELECT *
+            FROM push_subscriptions
+            WHERE user_id = $1
+            `,
+            [medicine.user_id]
           );
 
-          atLeastOneSent = true;
-
+        if (
+          subscriptionResult.rows.length === 0
+        ) {
           console.log(
-            `✅ Reminder sent: ${medicine.medicine_name} to user ${medicine.user_id}`
-          );
-        } catch (error) {
-          console.error(
-            `❌ Reminder failed for ${medicine.medicine_name}:`,
-            error.message
+            `⚠️ No saved push subscription for user ${medicine.user_id}`
           );
 
-          // Subscription no longer exists in
-          // the browser/push service.
-          if (
-            error.statusCode === 404 ||
-            error.statusCode === 410
-          ) {
-            await pool.query(
-              `
-              DELETE FROM push_subscriptions
-              WHERE id = $1
-              `,
-              [row.id]
+          continue;
+        }
+
+        const payload = JSON.stringify({
+          title: "💊 Medicine Reminder",
+
+          body: `Time to take ${
+            medicine.medicine_name ||
+            "your medicine"
+          } — ${
+            medicine.dosage ||
+            "Dosage not specified"
+          }`,
+
+          tag: reminderKey,
+
+          url: "/dashboard",
+        });
+
+        let atLeastOneSent = false;
+
+        for (
+          const row of subscriptionResult.rows
+        ) {
+          const subscription = {
+            endpoint: row.endpoint,
+
+            keys: {
+              p256dh: row.p256dh,
+              auth: row.auth,
+            },
+          };
+
+          try {
+            await webpush.sendNotification(
+              subscription,
+              payload
             );
+
+            atLeastOneSent = true;
 
             console.log(
-              `🗑️ Expired subscription removed for user ${medicine.user_id}`
+              `✅ Reminder sent: ${medicine.medicine_name} to user ${medicine.user_id}`
             );
+          } catch (error) {
+            console.error(
+              `❌ Reminder failed for ${medicine.medicine_name}:`,
+              error.message
+            );
+
+            if (
+              error.statusCode === 404 ||
+              error.statusCode === 410
+            ) {
+              await pool.query(
+                `
+                DELETE FROM push_subscriptions
+                WHERE id = $1
+                `,
+                [row.id]
+              );
+
+              console.log(
+                `🗑️ Expired subscription removed for user ${medicine.user_id}`
+              );
+            }
           }
+        }
+
+        if (atLeastOneSent) {
+          sentReminders.add(
+            reminderKey
+          );
         }
       }
 
-      if (atLeastOneSent) {
-        sentReminders.add(
-          reminderKey
-        );
+      if (sentReminders.size > 1000) {
+        sentReminders.clear();
       }
+    } catch (error) {
+      console.error(
+        "❌ Reminder scheduler error:",
+        error.message
+      );
     }
-
-    // Prevent memory from growing forever.
-    if (sentReminders.size > 1000) {
-      sentReminders.clear();
-    }
-  } catch (error) {
-    console.error(
-      "❌ Reminder scheduler error:",
-      error.message
-    );
-  }
-});
+  });
+}
 
 // ========================================
-// EXISTING ROUTES
+// BASIC ROUTE
 // ========================================
 
 app.get("/", (req, res) => {
@@ -543,6 +509,10 @@ app.get("/", (req, res) => {
       "MediReminder backend is running",
   });
 });
+
+// ========================================
+// DATABASE TEST ROUTE
+// ========================================
 
 app.get(
   "/api/test-database",
@@ -572,11 +542,20 @@ app.get(
 // START SERVER
 // ========================================
 
-const PORT =
-  process.env.PORT || 5000;
+const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  console.log(
-    `🚀 Server is running on http://localhost:${PORT}`
-  );
-});
+// Only start the real HTTP server when this file
+// is executed directly.
+//
+// Jest/Supertest imports this file, so during tests
+// we do not want app.listen() to run.
+if (require.main === module) {
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(
+      `🚀 Server is running on port ${PORT}`
+    );
+  });
+}
+
+// Export Express app for Supertest.
+module.exports = app;
