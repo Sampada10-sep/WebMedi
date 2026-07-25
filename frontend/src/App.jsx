@@ -7,6 +7,7 @@ import Dashboard from "./pages/Dashboard";
 import MyMedicines from "./pages/MyMedicines";
 import AddMedicine from "./pages/AddMedicine";
 import EditMedicine from "./pages/EditMedicine";
+import Profile from "./pages/Profile";
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/dashboard" element={<Dashboard />} />
+      <Route path="/profile" element={<Profile />} />
       <Route path="/medicines" element={<MyMedicines />} />
       <Route path="/add-medicine" element={<AddMedicine />} />
       <Route

@@ -1,0 +1,50 @@
+/* Final Add Medicine input styling */
+
+.medicine-input,
+.medicine-textarea {
+  background-color: #3b3b3b !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  caret-color: #ffffff;
+  color-scheme: dark;
+}
+
+.medicine-input::placeholder,
+.medicine-textarea::placeholder {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+.medicine-input[type="date"],
+.medicine-input[type="time"] {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  color-scheme: dark;
+}
+
+.medicine-input::-webkit-datetime-edit,
+.medicine-input::-webkit-datetime-edit-fields-wrapper,
+.medicine-input::-webkit-datetime-edit-text,
+.medicine-input::-webkit-datetime-edit-year-field,
+.medicine-input::-webkit-datetime-edit-month-field,
+.medicine-input::-webkit-datetime-edit-day-field,
+.medicine-input::-webkit-datetime-edit-hour-field,
+.medicine-input::-webkit-datetime-edit-minute-field,
+.medicine-input::-webkit-datetime-edit-second-field,
+.medicine-input::-webkit-datetime-edit-ampm-field {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+.medicine-input::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+  opacity: 1;
+}
+
+.medicine-input:focus,
+.medicine-textarea:focus {
+  border-color: #6366f1 !important;
+}

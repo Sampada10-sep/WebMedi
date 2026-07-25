@@ -1,6 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import { Doughnut } from "react-chartjs-2";
+import { useTheme } from "../context/ThemeContext";
+
+import {
+  subscribeToPush,
+  unsubscribeFromPush,
+  sendTestPush,
+} from "../pushNotifications";
 
 import {
   Chart as ChartJS,
@@ -13,83 +26,418 @@ ChartJS.register(ArcElement, Tooltip, Legend);
 
 function Dashboard() {
   const navigate = useNavigate();
+  const { theme } = useTheme();
+
+  const isDark = theme === "dark";
 
   const [medicines, setMedicines] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
 
+  const [notificationPermission, setNotificationPermission] =
+    useState(
+      typeof Notification === "undefined"
+        ? "unsupported"
+        : Notification.permission
+    );
+
+  const notifiedMedicines = useRef(new Set());
+
+  const [notificationsEnabled, setNotificationsEnabled] = useState(
+    localStorage.getItem("medicine_notifications") !== "off"
+  );
+
+  const [dueMedicine, setDueMedicine] = useState(null);
+  const snoozeTimerRef = useRef(null);
+
   const userName =
     localStorage.getItem("user_name") || "User";
 
-  useEffect(() => {
-    const controller = new AbortController();
+  const colors = {
+    page: isDark ? "#0f172a" : "#f4f7fb",
+    navbar: isDark ? "#1e293b" : "#ffffff",
+    card: isDark ? "#1e293b" : "#ffffff",
+    cardSecondary: isDark ? "#273449" : "#f9fafb",
+    text: isDark ? "#f8fafc" : "#1f2937",
+    mutedText: isDark ? "#cbd5e1" : "#6b7280",
+    lightText: isDark ? "#94a3b8" : "#9ca3af",
+    border: isDark ? "#334155" : "#f1f5f9",
+    buttonBackground: isDark ? "#334155" : "#ffffff",
 
-    async function loadMedicines() {
+    shadow: isDark
+      ? "0 7px 22px rgba(0, 0, 0, 0.3)"
+      : "0 7px 22px rgba(0, 0, 0, 0.07)",
+  };
+
+  const loadMedicines = useCallback(async (signal) => {
+    try {
+      const response = await fetch(
+        "http://localhost:5000/api/medicines",
+        {
+          signal,
+          cache: "no-store",
+        }
+      );
+
+      let data = {};
+
       try {
-        const response = await fetch(
-          "http://localhost:5000/api/medicines",
-          {
-            signal: controller.signal,
-          }
+        data = await response.json();
+      } catch {
+        data = {};
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data.message || "Failed to load medicines."
         );
+      }
 
-        let data = {};
+      const currentUserId = localStorage.getItem("user_id");
+      const allMedicines = Array.isArray(data)
+        ? data
+        : data.medicines || [];
 
-        try {
-          data = await response.json();
-        } catch {
-          data = {};
-        }
+      const currentUserMedicines = allMedicines.filter(
+        (medicine) =>
+          !currentUserId ||
+          !medicine.user_id ||
+          String(medicine.user_id) === String(currentUserId)
+      );
 
-        if (response.ok) {
-          const currentUserId =
-            localStorage.getItem("user_id");
-
-          const allMedicines = Array.isArray(data)
-            ? data
-            : data.medicines || [];
-
-          const currentUserMedicines =
-            allMedicines.filter(
-              (medicine) =>
-                !currentUserId ||
-                !medicine.user_id ||
-                String(medicine.user_id) ===
-                  String(currentUserId)
-            );
-
-          setMedicines(currentUserMedicines);
-          setMessage("");
-        } else {
-          setMessage(
-            data.message ||
-              "Failed to load medicines."
-          );
-        }
-      } catch (error) {
-        if (error.name !== "AbortError") {
-          console.error(
-            "Dashboard fetch error:",
-            error
-          );
-
-          setMessage(
-            "Cannot connect to the backend."
-          );
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsLoading(false);
-        }
+      setMedicines(currentUserMedicines);
+      setMessage("");
+    } catch (error) {
+      if (error.name !== "AbortError") {
+        console.error("Dashboard fetch error:", error);
+        setMessage(
+          error.message || "Cannot connect to the backend."
+        );
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setIsLoading(false);
       }
     }
+  }, []);
 
-    loadMedicines();
+  useEffect(() => {
+  const controller = new AbortController();
+
+  const initialLoadId = window.setTimeout(() => {
+    void loadMedicines(controller.signal);
+  }, 0);
+
+  const medicinePollId = window.setInterval(() => {
+    void loadMedicines();
+  }, 15000);
+
+  const refreshOnFocus = () => {
+    void loadMedicines();
+  };
+
+  window.addEventListener("focus", refreshOnFocus);
+
+  return () => {
+    controller.abort();
+    window.clearTimeout(initialLoadId);
+    window.clearInterval(medicinePollId);
+    window.removeEventListener("focus", refreshOnFocus);
+  };
+}, [loadMedicines]);
+  const toggleNotifications = async () => {
+    try {
+      if (notificationsEnabled) {
+        await unsubscribeFromPush();
+
+        setNotificationsEnabled(false);
+        localStorage.setItem("medicine_notifications", "off");
+        setDueMedicine(null);
+
+        if (snoozeTimerRef.current) {
+          window.clearTimeout(snoozeTimerRef.current);
+          snoozeTimerRef.current = null;
+        }
+
+        setMessage("🔕 Medicine notifications turned off.");
+
+        window.setTimeout(() => {
+          setMessage("");
+        }, 3000);
+
+        return;
+      }
+
+      if (!("Notification" in window)) {
+        setMessage(
+          "Your browser does not support notifications."
+        );
+        return;
+      }
+
+      let permission = Notification.permission;
+
+      if (permission !== "granted") {
+        permission = await Notification.requestPermission();
+      }
+
+      setNotificationPermission(permission);
+
+      if (permission !== "granted") {
+        setMessage(
+          "Please allow notifications in your browser."
+        );
+        return;
+      }
+
+      await subscribeToPush();
+
+      setNotificationsEnabled(true);
+      localStorage.setItem("medicine_notifications", "on");
+
+      setMessage(
+        "🔔 Push notifications turned on successfully."
+      );
+
+      window.setTimeout(() => {
+        setMessage("");
+      }, 4000);
+    } catch (error) {
+      console.error("Push notification error:", error);
+
+      setMessage(
+        error.message ||
+          "Could not enable push notifications."
+      );
+    }
+  };
+
+  useEffect(() => {
+    if (!("Notification" in window)) {
+      return undefined;
+    }
+
+    const parseReminderTime = (timeValue) => {
+      if (!timeValue) return null;
+
+      const value = String(timeValue).trim();
+      const twelveHourMatch = value.match(
+        /^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i
+      );
+
+      let hours;
+      let minutes;
+
+      if (twelveHourMatch) {
+        hours = Number(twelveHourMatch[1]);
+        minutes = Number(twelveHourMatch[2]);
+        const period = twelveHourMatch[3].toUpperCase();
+
+        if (period === "PM" && hours !== 12) hours += 12;
+        if (period === "AM" && hours === 12) hours = 0;
+      } else {
+        const parts = value.split(":");
+        hours = Number(parts[0]);
+        minutes = Number(parts[1]);
+      }
+
+      if (
+        Number.isNaN(hours) ||
+        Number.isNaN(minutes) ||
+        hours < 0 ||
+        hours > 23 ||
+        minutes < 0 ||
+        minutes > 59
+      ) {
+        return null;
+      }
+
+      return { hours, minutes };
+    };
+
+    const getLocalDateString = (date) =>
+      [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, "0"),
+        String(date.getDate()).padStart(2, "0"),
+      ].join("-");
+
+    const checkMedicineReminders = () => {
+      if (!notificationsEnabled) return;
+
+      const now = new Date();
+      const currentDate = getLocalDateString(now);
+
+      medicines.forEach((medicine) => {
+        const status = String(
+          medicine.status || "Active"
+        ).toLowerCase();
+
+        const startDate = medicine.start_date
+          ? String(medicine.start_date).split("T")[0]
+          : "";
+
+        const endDate = medicine.end_date
+          ? String(medicine.end_date).split("T")[0]
+          : "";
+
+        const isScheduledToday =
+          (!startDate || startDate <= currentDate) &&
+          (!endDate || endDate >= currentDate);
+
+        if (status !== "active" || !isScheduledToday) return;
+
+        const parsedTime = parseReminderTime(
+          medicine.reminder_time
+        );
+
+        if (!parsedTime) return;
+
+        const reminderDate = new Date(now);
+        reminderDate.setHours(
+          parsedTime.hours,
+          parsedTime.minutes,
+          0,
+          0
+        );
+
+        const differenceInMinutes =
+          (now.getTime() - reminderDate.getTime()) / 60000;
+
+        // Notify at the scheduled time or up to 5 minutes late.
+        if (differenceInMinutes < 0 || differenceInMinutes > 5) {
+          return;
+        }
+
+        const notificationKey = `${
+          medicine.id
+        }-${currentDate}-${parsedTime.hours}:${parsedTime.minutes}`;
+
+        if (notifiedMedicines.current.has(notificationKey)) {
+          return;
+        }
+
+        // Show an in-app reminder while MediReminder is open.
+        setDueMedicine(medicine);
+
+        // Also show a browser notification when permission is granted.
+        if (
+          "Notification" in window &&
+          Notification.permission === "granted"
+        ) {
+          const notification = new Notification(
+            "💊 Medicine Reminder",
+            {
+              body: `${
+                medicine.medicine_name || "Medicine"
+              } — ${
+                medicine.dosage || "Dosage not provided"
+              }`,
+              tag: notificationKey,
+              requireInteraction: true,
+            }
+          );
+
+          notification.onclick = () => {
+            window.focus();
+            navigate("/medicines");
+            notification.close();
+          };
+        }
+
+        notifiedMedicines.current.add(notificationKey);
+      });
+    };
+
+    checkMedicineReminders();
+
+    const reminderIntervalId = window.setInterval(
+      checkMedicineReminders,
+      10000
+    );
+
+    const checkOnFocus = () => checkMedicineReminders();
+    window.addEventListener("focus", checkOnFocus);
 
     return () => {
-      controller.abort();
+      window.clearInterval(reminderIntervalId);
+      window.removeEventListener("focus", checkOnFocus);
     };
-  }, []);
+  }, [medicines, navigate, notificationsEnabled]);
+
+  const markReminderTaken = () => {
+    setDueMedicine(null);
+    setMessage("✅ Medicine marked as taken.");
+
+    window.setTimeout(() => {
+      setMessage("");
+    }, 3000);
+  };
+
+  const snoozeReminder = () => {
+    if (!dueMedicine) return;
+
+    const medicineToSnooze = dueMedicine;
+    setDueMedicine(null);
+    setMessage("⏰ Reminder snoozed for 10 minutes.");
+
+    if (snoozeTimerRef.current) {
+      window.clearTimeout(snoozeTimerRef.current);
+    }
+
+    snoozeTimerRef.current = window.setTimeout(() => {
+      if (
+        localStorage.getItem("medicine_notifications") !== "off"
+      ) {
+        setDueMedicine(medicineToSnooze);
+
+        if (
+          "Notification" in window &&
+          Notification.permission === "granted"
+        ) {
+          new Notification("💊 Snoozed Medicine Reminder", {
+            body: `${
+              medicineToSnooze.medicine_name || "Medicine"
+            } — ${
+              medicineToSnooze.dosage || "Dosage not provided"
+            }`,
+            requireInteraction: true,
+          });
+        }
+      }
+    }, 10 * 60 * 1000);
+
+    window.setTimeout(() => {
+      setMessage("");
+    }, 3000);
+  };
+
+  const sendTestNotification = async () => {
+    try {
+      setMessage(
+        "Sending background test notification..."
+      );
+
+      const result = await sendTestPush();
+
+      console.log("Push test result:", result);
+
+      setMessage(
+        "✅ Background push notification sent."
+      );
+
+      window.setTimeout(() => {
+        setMessage("");
+      }, 3000);
+    } catch (error) {
+      console.error("Test push error:", error);
+
+      setMessage(
+        error.message ||
+          "Failed to send test push notification."
+      );
+    }
+  };
 
   const totalMedicines = medicines.length;
 
@@ -112,7 +460,10 @@ function Dashboard() {
 
     return [
       today.getFullYear(),
-      String(today.getMonth() + 1).padStart(2, "0"),
+      String(today.getMonth() + 1).padStart(
+        2,
+        "0"
+      ),
       String(today.getDate()).padStart(2, "0"),
     ].join("-");
   }, []);
@@ -129,29 +480,36 @@ function Dashboard() {
         }
 
         const startDate = medicine.start_date
-          ? String(medicine.start_date).split("T")[0]
+          ? String(medicine.start_date).split(
+              "T"
+            )[0]
           : "";
 
         const endDate = medicine.end_date
-          ? String(medicine.end_date).split("T")[0]
+          ? String(medicine.end_date).split(
+              "T"
+            )[0]
           : "";
 
         const hasStarted =
-          !startDate || startDate <= todayString;
+          !startDate ||
+          startDate <= todayString;
 
         const hasNotEnded =
-          !endDate || endDate >= todayString;
+          !endDate ||
+          endDate >= todayString;
 
         return hasStarted && hasNotEnded;
       })
-      .sort((firstMedicine, secondMedicine) =>
-        String(
-          firstMedicine.reminder_time || ""
-        ).localeCompare(
+      .sort(
+        (firstMedicine, secondMedicine) =>
           String(
-            secondMedicine.reminder_time || ""
+            firstMedicine.reminder_time || ""
+          ).localeCompare(
+            String(
+              secondMedicine.reminder_time || ""
+            )
           )
-        )
       );
   }, [medicines, todayString]);
 
@@ -161,18 +519,22 @@ function Dashboard() {
     datasets: [
       {
         label: "Medicines",
+
         data: [
           activeMedicines,
           completedMedicines,
         ],
+
         backgroundColor: [
           "#22c55e",
           "#3b82f6",
         ],
+
         borderColor: [
-          "#ffffff",
-          "#ffffff",
+          isDark ? "#1e293b" : "#ffffff",
+          isDark ? "#1e293b" : "#ffffff",
         ],
+
         borderWidth: 3,
         hoverOffset: 8,
       },
@@ -190,6 +552,7 @@ function Dashboard() {
         labels: {
           padding: 20,
           usePointStyle: true,
+          color: colors.text,
 
           font: {
             size: 14,
@@ -207,7 +570,6 @@ function Dashboard() {
       },
     },
   };
-
   const formatTime = (timeValue) => {
     if (!timeValue) {
       return "No time set";
@@ -247,8 +609,20 @@ function Dashboard() {
   };
 
   return (
-    <div style={styles.page}>
-      <nav style={styles.navbar}>
+    <div
+      style={{
+        ...styles.page,
+        backgroundColor: colors.page,
+        color: colors.text,
+      }}
+    >
+      <nav
+        style={{
+          ...styles.navbar,
+          backgroundColor: colors.navbar,
+          boxShadow: colors.shadow,
+        }}
+      >
         <h2 style={styles.logo}>
           MediReminder
         </h2>
@@ -256,7 +630,56 @@ function Dashboard() {
         <div style={styles.navButtons}>
           <button
             type="button"
-            style={styles.profileButton}
+            style={{
+              ...styles.notificationToggle,
+              backgroundColor: notificationsEnabled
+                ? "#16a34a"
+                : "#94a3b8",
+            }}
+            onClick={toggleNotifications}
+            aria-pressed={notificationsEnabled}
+          >
+            <span
+              style={{
+                ...styles.toggleTrack,
+                backgroundColor: notificationsEnabled
+                  ? "#bbf7d0"
+                  : "#e5e7eb",
+              }}
+            >
+              <span
+                style={{
+                  ...styles.toggleKnob,
+                  transform: notificationsEnabled
+                    ? "translateX(18px)"
+                    : "translateX(0)",
+                }}
+              />
+            </span>
+
+            {notificationsEnabled
+              ? "🔔 Notifications ON"
+              : "🔕 Notifications OFF"}
+          </button>
+
+          {notificationsEnabled &&
+            notificationPermission === "granted" && (
+              <button
+                type="button"
+                style={styles.testNotificationButton}
+                onClick={sendTestNotification}
+              >
+                Test Notification
+              </button>
+            )}
+
+          <button
+            type="button"
+            style={{
+              ...styles.profileButton,
+              backgroundColor:
+                colors.buttonBackground,
+            }}
             onClick={() => navigate("/profile")}
           >
             Profile
@@ -273,6 +696,75 @@ function Dashboard() {
       </nav>
 
       <main style={styles.container}>
+        {notificationsEnabled && dueMedicine && (
+          <div
+            style={{
+              ...styles.reminderPopup,
+              backgroundColor: colors.card,
+              color: colors.text,
+              boxShadow: colors.shadow,
+              border: `1px solid ${colors.border}`,
+            }}
+          >
+            <div style={styles.reminderPopupHeader}>
+              <div style={styles.reminderPopupIcon}>💊</div>
+
+              <div>
+                <h3 style={styles.reminderPopupTitle}>
+                  Medicine Reminder
+                </h3>
+
+                <p
+                  style={{
+                    ...styles.reminderPopupSubtitle,
+                    color: colors.mutedText,
+                  }}
+                >
+                  It&apos;s time to take your medicine.
+                </p>
+              </div>
+            </div>
+
+            <div
+              style={{
+                ...styles.reminderPopupMedicine,
+                backgroundColor: colors.cardSecondary,
+                border: `1px solid ${colors.border}`,
+              }}
+            >
+              <strong>
+                {dueMedicine.medicine_name || "Medicine"}
+              </strong>
+
+              <span style={{ color: colors.mutedText }}>
+                {dueMedicine.dosage || "Dosage not provided"}
+              </span>
+
+              <span style={styles.reminderPopupTime}>
+                {formatTime(dueMedicine.reminder_time)}
+              </span>
+            </div>
+
+            <div style={styles.reminderPopupActions}>
+              <button
+                type="button"
+                style={styles.takenButton}
+                onClick={markReminderTaken}
+              >
+                ✓ Taken
+              </button>
+
+              <button
+                type="button"
+                style={styles.snoozeButton}
+                onClick={snoozeReminder}
+              >
+                ⏰ Snooze 10 min
+              </button>
+            </div>
+          </div>
+        )}
+
         <section style={styles.welcomeSection}>
           <div>
             <p style={styles.welcomeLabel}>
@@ -319,17 +811,33 @@ function Dashboard() {
         )}
 
         <section style={styles.statisticsGrid}>
-          <div style={styles.statCard}>
+          <div
+            style={{
+              ...styles.statCard,
+              backgroundColor: colors.card,
+              boxShadow: colors.shadow,
+            }}
+          >
             <div style={styles.totalIcon}>
               💊
             </div>
 
             <div>
-              <p style={styles.statLabel}>
+              <p
+                style={{
+                  ...styles.statLabel,
+                  color: colors.mutedText,
+                }}
+              >
                 Total Medicines
               </p>
 
-              <h2 style={styles.statNumber}>
+              <h2
+                style={{
+                  ...styles.statNumber,
+                  color: colors.text,
+                }}
+              >
                 {isLoading
                   ? "..."
                   : totalMedicines}
@@ -337,17 +845,33 @@ function Dashboard() {
             </div>
           </div>
 
-          <div style={styles.statCard}>
+          <div
+            style={{
+              ...styles.statCard,
+              backgroundColor: colors.card,
+              boxShadow: colors.shadow,
+            }}
+          >
             <div style={styles.reminderIcon}>
               ⏰
             </div>
 
             <div>
-              <p style={styles.statLabel}>
+              <p
+                style={{
+                  ...styles.statLabel,
+                  color: colors.mutedText,
+                }}
+              >
                 Today&apos;s Reminders
               </p>
 
-              <h2 style={styles.statNumber}>
+              <h2
+                style={{
+                  ...styles.statNumber,
+                  color: colors.text,
+                }}
+              >
                 {isLoading
                   ? "..."
                   : todaysReminders.length}
@@ -355,17 +879,33 @@ function Dashboard() {
             </div>
           </div>
 
-          <div style={styles.statCard}>
+          <div
+            style={{
+              ...styles.statCard,
+              backgroundColor: colors.card,
+              boxShadow: colors.shadow,
+            }}
+          >
             <div style={styles.activeIcon}>
               ✓
             </div>
 
             <div>
-              <p style={styles.statLabel}>
+              <p
+                style={{
+                  ...styles.statLabel,
+                  color: colors.mutedText,
+                }}
+              >
                 Active Medicines
               </p>
 
-              <h2 style={styles.statNumber}>
+              <h2
+                style={{
+                  ...styles.statNumber,
+                  color: colors.text,
+                }}
+              >
                 {isLoading
                   ? "..."
                   : activeMedicines}
@@ -373,17 +913,33 @@ function Dashboard() {
             </div>
           </div>
 
-          <div style={styles.statCard}>
+          <div
+            style={{
+              ...styles.statCard,
+              backgroundColor: colors.card,
+              boxShadow: colors.shadow,
+            }}
+          >
             <div style={styles.completedIcon}>
               ✓
             </div>
 
             <div>
-              <p style={styles.statLabel}>
+              <p
+                style={{
+                  ...styles.statLabel,
+                  color: colors.mutedText,
+                }}
+              >
                 Completed
               </p>
 
-              <h2 style={styles.statNumber}>
+              <h2
+                style={{
+                  ...styles.statNumber,
+                  color: colors.text,
+                }}
+              >
                 {isLoading
                   ? "..."
                   : completedMedicines}
@@ -393,14 +949,30 @@ function Dashboard() {
         </section>
 
         <section style={styles.contentGrid}>
-          <div style={styles.chartContainer}>
+          <div
+            style={{
+              ...styles.chartContainer,
+              backgroundColor: colors.card,
+              boxShadow: colors.shadow,
+            }}
+          >
             <div style={styles.sectionHeading}>
               <div>
-                <h2 style={styles.sectionTitle}>
+                <h2
+                  style={{
+                    ...styles.sectionTitle,
+                    color: colors.text,
+                  }}
+                >
                   Medicine Statistics
                 </h2>
 
-                <p style={styles.sectionSubtitle}>
+                <p
+                  style={{
+                    ...styles.sectionSubtitle,
+                    color: colors.lightText,
+                  }}
+                >
                   Active and completed medicine
                   overview
                 </p>
@@ -408,7 +980,12 @@ function Dashboard() {
             </div>
 
             {isLoading ? (
-              <div style={styles.loadingBox}>
+              <div
+                style={{
+                  ...styles.loadingBox,
+                  color: colors.mutedText,
+                }}
+              >
                 Loading chart...
               </div>
             ) : totalMedicines === 0 ? (
@@ -417,7 +994,12 @@ function Dashboard() {
                   📊
                 </div>
 
-                <p style={styles.emptyChartText}>
+                <p
+                  style={{
+                    ...styles.emptyChartText,
+                    color: colors.mutedText,
+                  }}
+                >
                   Add medicines to view your
                   statistics.
                 </p>
@@ -439,12 +1021,20 @@ function Dashboard() {
 
                     <div>
                       <strong
-                        style={styles.summaryNumber}
+                        style={{
+                          ...styles.summaryNumber,
+                          color: colors.text,
+                        }}
                       >
                         {activeMedicines}
                       </strong>
 
-                      <p style={styles.summaryLabel}>
+                      <p
+                        style={{
+                          ...styles.summaryLabel,
+                          color: colors.mutedText,
+                        }}
+                      >
                         Active
                       </p>
                     </div>
@@ -457,12 +1047,20 @@ function Dashboard() {
 
                     <div>
                       <strong
-                        style={styles.summaryNumber}
+                        style={{
+                          ...styles.summaryNumber,
+                          color: colors.text,
+                        }}
                       >
                         {completedMedicines}
                       </strong>
 
-                      <p style={styles.summaryLabel}>
+                      <p
+                        style={{
+                          ...styles.summaryLabel,
+                          color: colors.mutedText,
+                        }}
+                      >
                         Completed
                       </p>
                     </div>
@@ -471,15 +1069,30 @@ function Dashboard() {
               </>
             )}
           </div>
-
-          <div style={styles.remindersContainer}>
+                    <div
+            style={{
+              ...styles.remindersContainer,
+              backgroundColor: colors.card,
+              boxShadow: colors.shadow,
+            }}
+          >
             <div style={styles.sectionHeading}>
               <div>
-                <h2 style={styles.sectionTitle}>
-                  Today&apos;s Reminders
+                <h2
+                  style={{
+                    ...styles.sectionTitle,
+                    color: colors.text,
+                  }}
+                >
+                  Today's Reminders
                 </h2>
 
-                <p style={styles.sectionSubtitle}>
+                <p
+                  style={{
+                    ...styles.sectionSubtitle,
+                    color: colors.lightText,
+                  }}
+                >
                   Medicines scheduled for today
                 </p>
               </div>
@@ -496,28 +1109,37 @@ function Dashboard() {
             </div>
 
             {isLoading ? (
-              <div style={styles.loadingBox}>
+              <div
+                style={{
+                  ...styles.loadingBox,
+                  color: colors.mutedText,
+                }}
+              >
                 Loading reminders...
               </div>
             ) : todaysReminders.length === 0 ? (
               <div style={styles.emptyReminderBox}>
-                <div
-                  style={styles.emptyReminderIcon}
-                >
+                <div style={styles.emptyReminderIcon}>
                   🎉
                 </div>
 
                 <h3
-                  style={styles.emptyReminderTitle}
+                  style={{
+                    ...styles.emptyReminderTitle,
+                    color: colors.text,
+                  }}
                 >
                   No reminders today
                 </h3>
 
                 <p
-                  style={styles.emptyReminderText}
+                  style={{
+                    ...styles.emptyReminderText,
+                    color: colors.mutedText,
+                  }}
                 >
-                  You do not have any active medicines
-                  scheduled for today.
+                  You do not have any active
+                  medicines scheduled for today.
                 </p>
               </div>
             ) : (
@@ -526,28 +1148,38 @@ function Dashboard() {
                   (medicine) => (
                     <div
                       key={medicine.id}
-                      style={styles.reminderCard}
+                      style={{
+                        ...styles.reminderCard,
+                        backgroundColor:
+                          colors.cardSecondary,
+                        border: `1px solid ${colors.border}`,
+                      }}
                     >
-                      <div
-                        style={styles.medicineIcon}
-                      >
+                      <div style={styles.medicineIcon}>
                         💊
                       </div>
 
                       <div
-                        style={styles.reminderDetails}
+                        style={
+                          styles.reminderDetails
+                        }
                       >
                         <h3
-                          style={styles.medicineName}
+                          style={{
+                            ...styles.medicineName,
+                            color: colors.text,
+                          }}
                         >
                           {medicine.medicine_name ||
                             "Medicine"}
                         </h3>
 
                         <p
-                          style={
-                            styles.medicineDosage
-                          }
+                          style={{
+                            ...styles.medicineDosage,
+                            color:
+                              colors.mutedText,
+                          }}
                         >
                           {medicine.dosage ||
                             "No dosage provided"}
@@ -555,7 +1187,9 @@ function Dashboard() {
                       </div>
 
                       <div
-                        style={styles.reminderTime}
+                        style={
+                          styles.reminderTime
+                        }
                       >
                         {formatTime(
                           medicine.reminder_time
@@ -576,20 +1210,18 @@ function Dashboard() {
 const styles = {
   page: {
     minHeight: "100vh",
-    backgroundColor: "#f4f7fb",
     fontFamily: "Arial, sans-serif",
+    transition:
+      "background-color .25s,color .25s",
   },
 
   navbar: {
-    backgroundColor: "#ffffff",
     padding: "18px 40px",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
     gap: "20px",
     flexWrap: "wrap",
-    boxShadow:
-      "0 2px 14px rgba(0, 0, 0, 0.06)",
   },
 
   logo: {
@@ -602,13 +1234,57 @@ const styles = {
     display: "flex",
     alignItems: "center",
     gap: "12px",
+    flexWrap: "wrap",
+  },
+
+  notificationToggle: {
+    padding: "9px 14px",
+    border: "none",
+    borderRadius: "22px",
+    color: "#ffffff",
+    cursor: "pointer",
+    fontWeight: "bold",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "9px",
+    transition: "background-color .2s",
+    whiteSpace: "nowrap",
+  },
+
+  toggleTrack: {
+    width: "38px",
+    height: "20px",
+    borderRadius: "999px",
+    padding: "2px",
+    display: "inline-flex",
+    alignItems: "center",
+    transition: "background-color .2s",
+    boxSizing: "border-box",
+  },
+
+  toggleKnob: {
+    width: "16px",
+    height: "16px",
+    borderRadius: "50%",
+    backgroundColor: "#ffffff",
+    display: "block",
+    transition: "transform .2s",
+  },
+
+  testNotificationButton: {
+    padding: "10px 16px",
+    border: "1px solid #16a34a",
+    borderRadius: "8px",
+    backgroundColor: "transparent",
+    color: "#16a34a",
+    cursor: "pointer",
+    fontWeight: "bold",
   },
 
   profileButton: {
     padding: "10px 17px",
     border: "1px solid #4f46e5",
     borderRadius: "8px",
-    backgroundColor: "#ffffff",
     color: "#4f46e5",
     cursor: "pointer",
     fontWeight: "bold",
@@ -619,38 +1295,28 @@ const styles = {
     border: "none",
     borderRadius: "8px",
     backgroundColor: "#ef4444",
-    color: "#ffffff",
+    color: "#fff",
     cursor: "pointer",
     fontWeight: "bold",
   },
-
-  container: {
-    width: "100%",
-    maxWidth: "1250px",
+    container: {
+    width: "min(1180px, 92%)",
     margin: "0 auto",
-    padding: "38px 20px",
-    boxSizing: "border-box",
+    padding: "35px 0 55px",
   },
 
   welcomeSection: {
-    background:
-      "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
-    borderRadius: "20px",
-    padding: "35px",
-    color: "#ffffff",
     display: "flex",
-    alignItems: "center",
     justifyContent: "space-between",
+    alignItems: "center",
     gap: "25px",
     flexWrap: "wrap",
-    marginBottom: "25px",
-    boxShadow:
-      "0 15px 35px rgba(79, 70, 229, 0.25)",
+    marginBottom: "30px",
   },
 
   welcomeLabel: {
-    margin: "0 0 6px",
-    color: "#ddd6fe",
+    margin: "0 0 5px",
+    color: "#4f46e5",
     fontSize: "15px",
     fontWeight: "bold",
   },
@@ -658,11 +1324,12 @@ const styles = {
   welcomeTitle: {
     margin: "0 0 10px",
     fontSize: "34px",
+    lineHeight: 1.2,
   },
 
   welcomeText: {
     margin: 0,
-    color: "#ede9fe",
+    color: "#6b7280",
     fontSize: "16px",
   },
 
@@ -676,30 +1343,30 @@ const styles = {
     padding: "12px 20px",
     border: "none",
     borderRadius: "9px",
-    backgroundColor: "#ffffff",
-    color: "#4f46e5",
+    backgroundColor: "#4f46e5",
+    color: "#ffffff",
     cursor: "pointer",
     fontWeight: "bold",
+    fontSize: "14px",
   },
 
   viewMedicineButton: {
     padding: "12px 20px",
-    border:
-      "1px solid rgba(255, 255, 255, 0.65)",
+    border: "1px solid #4f46e5",
     borderRadius: "9px",
     backgroundColor: "transparent",
-    color: "#ffffff",
+    color: "#4f46e5",
     cursor: "pointer",
     fontWeight: "bold",
+    fontSize: "14px",
   },
 
   messageBox: {
     marginBottom: "22px",
-    padding: "14px",
+    padding: "13px 16px",
     borderRadius: "9px",
-    backgroundColor: "#fee2e2",
-    color: "#991b1b",
-    textAlign: "center",
+    backgroundColor: "#dcfce7",
+    color: "#166534",
     fontWeight: "bold",
   },
 
@@ -712,42 +1379,39 @@ const styles = {
   },
 
   statCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: "15px",
     padding: "22px",
+    borderRadius: "14px",
     display: "flex",
     alignItems: "center",
     gap: "16px",
-    boxShadow:
-      "0 7px 22px rgba(0, 0, 0, 0.07)",
   },
 
   totalIcon: {
-    width: "54px",
-    height: "54px",
-    borderRadius: "14px",
+    width: "52px",
+    height: "52px",
+    borderRadius: "12px",
     backgroundColor: "#ede9fe",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: "26px",
+    fontSize: "24px",
   },
 
   reminderIcon: {
-    width: "54px",
-    height: "54px",
-    borderRadius: "14px",
+    width: "52px",
+    height: "52px",
+    borderRadius: "12px",
     backgroundColor: "#fef3c7",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: "26px",
+    fontSize: "24px",
   },
 
   activeIcon: {
-    width: "54px",
-    height: "54px",
-    borderRadius: "14px",
+    width: "52px",
+    height: "52px",
+    borderRadius: "12px",
     backgroundColor: "#dcfce7",
     color: "#16a34a",
     display: "flex",
@@ -758,9 +1422,9 @@ const styles = {
   },
 
   completedIcon: {
-    width: "54px",
-    height: "54px",
-    borderRadius: "14px",
+    width: "52px",
+    height: "52px",
+    borderRadius: "12px",
     backgroundColor: "#dbeafe",
     color: "#2563eb",
     display: "flex",
@@ -772,80 +1436,79 @@ const styles = {
 
   statLabel: {
     margin: "0 0 7px",
-    color: "#6b7280",
     fontSize: "14px",
-    fontWeight: "bold",
   },
 
   statNumber: {
     margin: 0,
-    color: "#1f2937",
     fontSize: "29px",
   },
 
   contentGrid: {
     display: "grid",
     gridTemplateColumns:
-      "repeat(auto-fit, minmax(360px, 1fr))",
-    gap: "25px",
-    alignItems: "stretch",
+      "repeat(auto-fit, minmax(320px, 1fr))",
+    gap: "24px",
+    alignItems: "start",
   },
 
   chartContainer: {
-    backgroundColor: "#ffffff",
-    padding: "27px",
-    borderRadius: "16px",
-    boxShadow:
-      "0 7px 22px rgba(0, 0, 0, 0.07)",
+    padding: "25px",
+    borderRadius: "15px",
+    minHeight: "440px",
   },
 
   remindersContainer: {
-    backgroundColor: "#ffffff",
-    padding: "27px",
-    borderRadius: "16px",
-    boxShadow:
-      "0 7px 22px rgba(0, 0, 0, 0.07)",
+    padding: "25px",
+    borderRadius: "15px",
+    minHeight: "440px",
   },
 
   sectionHeading: {
     display: "flex",
-    alignItems: "center",
     justifyContent: "space-between",
+    alignItems: "flex-start",
     gap: "15px",
-    marginBottom: "22px",
+    marginBottom: "24px",
   },
 
   sectionTitle: {
     margin: "0 0 6px",
-    color: "#1f2937",
     fontSize: "21px",
   },
 
   sectionSubtitle: {
     margin: 0,
-    color: "#9ca3af",
     fontSize: "14px",
   },
 
+  viewAllButton: {
+    border: "none",
+    backgroundColor: "transparent",
+    color: "#4f46e5",
+    cursor: "pointer",
+    fontWeight: "bold",
+    padding: "6px",
+  },
+
   chartBox: {
-    width: "100%",
-    maxWidth: "330px",
-    height: "300px",
+    height: "265px",
+    maxWidth: "340px",
     margin: "0 auto",
   },
 
   chartSummary: {
     display: "flex",
     justifyContent: "center",
-    gap: "35px",
+    gap: "45px",
     flexWrap: "wrap",
-    marginTop: "20px",
+    marginTop: "25px",
   },
 
   summaryItem: {
     display: "flex",
     alignItems: "center",
-    gap: "11px",
+    gap: "12px",
   },
 
   activeDot: {
@@ -863,29 +1526,74 @@ const styles = {
   },
 
   summaryNumber: {
-    display: "block",
-    color: "#1f2937",
     fontSize: "20px",
   },
 
   summaryLabel: {
     margin: "3px 0 0",
-    color: "#6b7280",
     fontSize: "13px",
   },
 
-  viewAllButton: {
-    border: "none",
-    backgroundColor: "transparent",
-    color: "#4f46e5",
-    cursor: "pointer",
-    fontWeight: "bold",
+  loadingBox: {
+    height: "270px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "15px",
+  },
+
+  emptyChartBox: {
+    height: "290px",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+  },
+
+  emptyChartIcon: {
+    fontSize: "48px",
+    marginBottom: "12px",
+  },
+
+  emptyChartText: {
+    margin: 0,
+    maxWidth: "260px",
+    lineHeight: 1.6,
+  },
+
+  emptyReminderBox: {
+    minHeight: "280px",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+  },
+
+  emptyReminderIcon: {
+    fontSize: "50px",
+    marginBottom: "12px",
+  },
+
+  emptyReminderTitle: {
+    margin: "0 0 9px",
+    fontSize: "20px",
+  },
+
+  emptyReminderText: {
+    margin: 0,
+    maxWidth: "310px",
+    lineHeight: 1.6,
   },
 
   remindersList: {
     display: "flex",
     flexDirection: "column",
     gap: "13px",
+    maxHeight: "340px",
+    overflowY: "auto",
+    paddingRight: "4px",
   },
 
   reminderCard: {
@@ -893,15 +1601,13 @@ const styles = {
     alignItems: "center",
     gap: "14px",
     padding: "15px",
-    borderRadius: "12px",
-    backgroundColor: "#f9fafb",
-    border: "1px solid #f1f5f9",
+    borderRadius: "11px",
   },
 
   medicineIcon: {
-    width: "44px",
-    height: "44px",
-    borderRadius: "12px",
+    width: "43px",
+    height: "43px",
+    borderRadius: "10px",
     backgroundColor: "#ede9fe",
     display: "flex",
     alignItems: "center",
@@ -912,76 +1618,119 @@ const styles = {
 
   reminderDetails: {
     flex: 1,
+    minWidth: 0,
   },
 
   medicineName: {
     margin: "0 0 5px",
-    color: "#1f2937",
     fontSize: "16px",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
   },
 
   medicineDosage: {
     margin: 0,
-    color: "#6b7280",
     fontSize: "13px",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
   },
 
   reminderTime: {
+    padding: "7px 10px",
+    borderRadius: "7px",
+    backgroundColor: "#4f46e5",
+    color: "#ffffff",
+    fontSize: "13px",
+    fontWeight: "bold",
+    whiteSpace: "nowrap",
+  },
+
+  reminderPopup: {
+    position: "fixed",
+    top: "88px",
+    right: "24px",
+    width: "min(360px, calc(100vw - 32px))",
+    padding: "20px",
+    borderRadius: "16px",
+    zIndex: 9999,
+  },
+
+  reminderPopupHeader: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    marginBottom: "15px",
+  },
+
+  reminderPopupIcon: {
+    width: "46px",
+    height: "46px",
+    borderRadius: "12px",
+    backgroundColor: "#ede9fe",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "23px",
+    flexShrink: 0,
+  },
+
+  reminderPopupTitle: {
+    margin: "0 0 4px",
+    fontSize: "18px",
+  },
+
+  reminderPopupSubtitle: {
+    margin: 0,
+    fontSize: "13px",
+  },
+
+  reminderPopupMedicine: {
+    padding: "13px",
+    borderRadius: "10px",
+    display: "grid",
+    gap: "5px",
+    marginBottom: "15px",
+  },
+
+  reminderPopupTime: {
+    marginTop: "3px",
     color: "#4f46e5",
     fontWeight: "bold",
     fontSize: "14px",
   },
 
-  loadingBox: {
-    padding: "60px 20px",
-    textAlign: "center",
-    color: "#6b7280",
-  },
-
-  emptyChartBox: {
-    minHeight: "300px",
+  reminderPopupActions: {
     display: "flex",
-    flexDirection: "column",
-    justifyContent: "center",
-    alignItems: "center",
-    textAlign: "center",
+    gap: "10px",
+    flexWrap: "wrap",
   },
 
-  emptyChartIcon: {
-    fontSize: "50px",
-    marginBottom: "15px",
+  takenButton: {
+    flex: 1,
+    minWidth: "110px",
+    padding: "10px 14px",
+    border: "none",
+    borderRadius: "8px",
+    backgroundColor: "#16a34a",
+    color: "#ffffff",
+    cursor: "pointer",
+    fontWeight: "bold",
   },
 
-  emptyChartText: {
-    color: "#6b7280",
+  snoozeButton: {
+    flex: 1,
+    minWidth: "140px",
+    padding: "10px 14px",
+    border: "none",
+    borderRadius: "8px",
+    backgroundColor: "#f59e0b",
+    color: "#ffffff",
+    cursor: "pointer",
+    fontWeight: "bold",
   },
 
-  emptyReminderBox: {
-    minHeight: "270px",
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "center",
-    alignItems: "center",
-    textAlign: "center",
-    padding: "20px",
-  },
-
-  emptyReminderIcon: {
-    fontSize: "48px",
-    marginBottom: "13px",
-  },
-
-  emptyReminderTitle: {
-    margin: "0 0 8px",
-    color: "#1f2937",
-  },
-
-  emptyReminderText: {
-    margin: 0,
-    maxWidth: "320px",
-    color: "#6b7280",
-    lineHeight: "1.5",
-  },
 };
 
 export default Dashboard;

@@ -13,9 +13,15 @@ function MyMedicines() {
   const [message, setMessage] = useState("Loading medicines...");
   const [isLoading, setIsLoading] = useState(true);
 
-  const [updatingMedicineId, setUpdatingMedicineId] = useState(null);
-  const [selectedMedicineId, setSelectedMedicineId] = useState(null);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [updatingMedicineId, setUpdatingMedicineId] =
+    useState(null);
+
+  const [selectedMedicineId, setSelectedMedicineId] =
+    useState(null);
+
+  const [showDeleteModal, setShowDeleteModal] =
+    useState(false);
+
   const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
@@ -24,6 +30,7 @@ function MyMedicines() {
     const fetchMedicines = async () => {
       try {
         setIsLoading(true);
+        setMessage("Loading medicines...");
 
         const response = await fetch(API_URL, {
           signal: controller.signal,
@@ -32,14 +39,23 @@ function MyMedicines() {
         const data = await response.json();
 
         if (!response.ok) {
-          throw new Error(data.message || "Failed to load medicines.");
+          throw new Error(
+            data.message || "Failed to load medicines."
+          );
         }
 
-        const medicineList = data.medicines || [];
+        const medicineList = Array.isArray(data)
+          ? data
+          : data.medicines || [];
+
+        console.log("Medicines from backend:", medicineList);
 
         setMedicines(medicineList);
+
         setMessage(
-          medicineList.length === 0 ? "No medicines found." : ""
+          medicineList.length === 0
+            ? "No medicines found."
+            : ""
         );
       } catch (error) {
         if (error.name !== "AbortError") {
@@ -56,26 +72,57 @@ function MyMedicines() {
     return () => controller.abort();
   }, []);
 
+  /*
+   * Converts every value into searchable lowercase text.
+   * This prevents errors when dosage or another value is a number.
+   */
+  const normalizeText = (value) => {
+    if (value === null || value === undefined) {
+      return "";
+    }
+
+    return String(value).trim().toLowerCase();
+  };
+
+  /*
+   * Search and status filtering
+   */
   const filteredMedicines = useMemo(() => {
-    const searchValue = searchText.trim().toLowerCase();
+    const searchValue = normalizeText(searchText);
 
     return medicines.filter((medicine) => {
-      const medicineName =
-        medicine.medicine_name?.toLowerCase() || "";
+      /*
+       * Supports different possible backend field names.
+       */
+      const medicineName = normalizeText(
+        medicine.medicine_name ||
+          medicine.medicineName ||
+          medicine.name
+      );
 
-      const dosage = medicine.dosage?.toLowerCase() || "";
-      const description =
-        medicine.description?.toLowerCase() || "";
+      const dosage = normalizeText(medicine.dosage);
+
+      const description = normalizeText(
+        medicine.description
+      );
+
+      const reminderTime = normalizeText(
+        medicine.reminder_time || medicine.reminderTime
+      );
+
+      const status = normalizeText(medicine.status);
 
       const matchesSearch =
+        searchValue === "" ||
         medicineName.includes(searchValue) ||
         dosage.includes(searchValue) ||
-        description.includes(searchValue);
+        description.includes(searchValue) ||
+        reminderTime.includes(searchValue) ||
+        status.includes(searchValue);
 
       const matchesStatus =
         statusFilter === "All" ||
-        medicine.status?.toLowerCase() ===
-          statusFilter.toLowerCase();
+        status === normalizeText(statusFilter);
 
       return matchesSearch && matchesStatus;
     });
@@ -89,32 +136,52 @@ function MyMedicines() {
     }, 2500);
   };
 
-  const updateMedicineStatus = async (medicine, newStatus) => {
+  const updateMedicineStatus = async (
+    medicine,
+    newStatus
+  ) => {
     try {
       setUpdatingMedicineId(medicine.id);
       setMessage("");
 
-      const response = await fetch(`${API_URL}/${medicine.id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          medicine_name: medicine.medicine_name,
-          dosage: medicine.dosage,
-          description: medicine.description || "",
-          reminder_time: medicine.reminder_time,
-          start_date: medicine.start_date,
-          end_date: medicine.end_date,
-          status: newStatus,
-        }),
-      });
+      const response = await fetch(
+        `${API_URL}/${medicine.id}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            medicine_name:
+              medicine.medicine_name ||
+              medicine.medicineName ||
+              medicine.name,
+
+            dosage: medicine.dosage,
+
+            description: medicine.description || "",
+
+            reminder_time:
+              medicine.reminder_time ||
+              medicine.reminderTime,
+
+            start_date:
+              medicine.start_date || medicine.startDate,
+
+            end_date:
+              medicine.end_date || medicine.endDate,
+
+            status: newStatus,
+          }),
+        }
+      );
 
       const data = await response.json();
 
       if (!response.ok) {
         throw new Error(
-          data.message || "Failed to update medicine status."
+          data.message ||
+            "Failed to update medicine status."
         );
       }
 
@@ -133,7 +200,10 @@ function MyMedicines() {
         `Medicine status changed to ${newStatus}.`
       );
     } catch (error) {
-      console.error("Update medicine status error:", error);
+      console.error(
+        "Update medicine status error:",
+        error
+      );
 
       setMessage(
         error.message || "Cannot connect to the backend."
@@ -190,13 +260,17 @@ function MyMedicines() {
       setMedicines((currentMedicines) =>
         currentMedicines.filter(
           (medicine) =>
-            Number(medicine.id) !== Number(selectedMedicineId)
+            Number(medicine.id) !==
+            Number(selectedMedicineId)
         )
       );
 
       setShowDeleteModal(false);
       setSelectedMedicineId(null);
-      showTemporaryMessage("Medicine deleted successfully.");
+
+      showTemporaryMessage(
+        "Medicine deleted successfully."
+      );
     } catch (error) {
       console.error("Delete medicine error:", error);
 
@@ -216,7 +290,13 @@ function MyMedicines() {
       return "—";
     }
 
-    return new Date(dateValue).toLocaleDateString("en-GB");
+    const date = new Date(dateValue);
+
+    if (Number.isNaN(date.getTime())) {
+      return dateValue;
+    }
+
+    return date.toLocaleDateString("en-GB");
   };
 
   const formatTime = (timeValue) => {
@@ -224,10 +304,17 @@ function MyMedicines() {
       return "—";
     }
 
-    const [hours, minutes] = timeValue.split(":");
+    const timeParts = String(timeValue).split(":");
+
+    if (timeParts.length < 2) {
+      return timeValue;
+    }
+
+    const hours = Number(timeParts[0]);
+    const minutes = Number(timeParts[1]);
 
     const date = new Date();
-    date.setHours(Number(hours), Number(minutes), 0);
+    date.setHours(hours, minutes, 0);
 
     return date.toLocaleTimeString("en-GB", {
       hour: "2-digit",
@@ -236,7 +323,7 @@ function MyMedicines() {
   };
 
   const getStatusStyle = (status) => {
-    const value = status?.toLowerCase();
+    const value = normalizeText(status);
 
     if (value === "completed") {
       return {
@@ -293,43 +380,68 @@ function MyMedicines() {
         </div>
 
         <div style={styles.filterSection}>
-          <input
-            type="search"
-            placeholder="Search medicine, dosage or description..."
-            value={searchText}
-            onChange={(event) =>
-              setSearchText(event.target.value)
-            }
-            style={styles.searchInput}
-          />
+          <div style={styles.searchContainer}>
+            <input
+              type="search"
+              placeholder="Search medicine, dosage or description..."
+              value={searchText}
+              onChange={(event) =>
+                setSearchText(event.target.value)
+              }
+              style={styles.searchInput}
+            />
 
-          <div style={styles.filterButtons}>
-            {["All", "Active", "Completed", "Inactive"].map(
-              (status) => (
-                <button
-                  key={status}
-                  type="button"
-                  onClick={() => setStatusFilter(status)}
-                  style={{
-                    ...styles.filterButton,
-                    ...(statusFilter === status
-                      ? styles.activeFilterButton
-                      : {}),
-                  }}
-                >
-                  {status}
-                </button>
-              )
+            {searchText && (
+              <button
+                type="button"
+                style={styles.clearSearchButton}
+                onClick={() => setSearchText("")}
+              >
+                Clear
+              </button>
             )}
           </div>
+
+          <div style={styles.filterButtons}>
+            {[
+              "All",
+              "Active",
+              "Completed",
+              "Inactive",
+            ].map((status) => (
+              <button
+                key={status}
+                type="button"
+                onClick={() => setStatusFilter(status)}
+                style={{
+                  ...styles.filterButton,
+                  ...(statusFilter === status
+                    ? styles.activeFilterButton
+                    : {}),
+                }}
+              >
+                {status}
+              </button>
+            ))}
+          </div>
+
+          {!isLoading && (
+            <p style={styles.resultCount}>
+              Showing {filteredMedicines.length} of{" "}
+              {medicines.length} medicines
+            </p>
+          )}
         </div>
-                {message && (
+
+        {message && (
           <div style={styles.messageBox}>{message}</div>
         )}
 
         {isLoading ? (
           <div style={styles.emptyState}>
-            <h3 style={styles.emptyTitle}>Loading medicines...</h3>
+            <h3 style={styles.emptyTitle}>
+              Loading medicines...
+            </h3>
           </div>
         ) : filteredMedicines.length === 0 ? (
           <div style={styles.emptyState}>
@@ -338,120 +450,165 @@ function MyMedicines() {
             </h3>
 
             <p style={styles.emptyText}>
-              Try changing your search or filter.
+              Try changing your search text or status filter.
             </p>
+
+            <button
+              type="button"
+              style={styles.resetButton}
+              onClick={() => {
+                setSearchText("");
+                setStatusFilter("All");
+              }}
+            >
+              Reset Search
+            </button>
           </div>
         ) : (
           <div style={styles.grid}>
-            {filteredMedicines.map((medicine) => (
-              <div key={medicine.id} style={styles.card}>
-                <div style={styles.cardHeader}>
-                  <div>
-                    <h2 style={styles.medicineName}>
-                      {medicine.medicine_name}
-                    </h2>
+            {filteredMedicines.map((medicine) => {
+              const medicineName =
+                medicine.medicine_name ||
+                medicine.medicineName ||
+                medicine.name ||
+                "Unnamed Medicine";
 
-                    <p style={styles.dosage}>
-                      {medicine.dosage || "No dosage provided"}
+              const reminderTime =
+                medicine.reminder_time ||
+                medicine.reminderTime;
+
+              const startDate =
+                medicine.start_date ||
+                medicine.startDate;
+
+              const endDate =
+                medicine.end_date || medicine.endDate;
+
+              return (
+                <div key={medicine.id} style={styles.card}>
+                  <div style={styles.cardHeader}>
+                    <div style={styles.cardTitleSection}>
+                      <h2 style={styles.medicineName}>
+                        {medicineName}
+                      </h2>
+
+                      <p style={styles.dosage}>
+                        {medicine.dosage ||
+                          "No dosage provided"}
+                      </p>
+                    </div>
+
+                    <select
+                      value={medicine.status || "Active"}
+                      disabled={
+                        updatingMedicineId === medicine.id
+                      }
+                      onChange={(event) =>
+                        updateMedicineStatus(
+                          medicine,
+                          event.target.value
+                        )
+                      }
+                      style={getStatusStyle(
+                        medicine.status
+                      )}
+                    >
+                      <option value="Active">
+                        Active
+                      </option>
+
+                      <option value="Completed">
+                        Completed
+                      </option>
+
+                      <option value="Inactive">
+                        Inactive
+                      </option>
+                    </select>
+                  </div>
+
+                  <div style={styles.details}>
+                    <div style={styles.detailRow}>
+                      <span style={styles.detailLabel}>
+                        Reminder Time
+                      </span>
+
+                      <span style={styles.detailValue}>
+                        {formatTime(reminderTime)}
+                      </span>
+                    </div>
+
+                    <div style={styles.detailRow}>
+                      <span style={styles.detailLabel}>
+                        Start Date
+                      </span>
+
+                      <span style={styles.detailValue}>
+                        {formatDate(startDate)}
+                      </span>
+                    </div>
+
+                    <div style={styles.detailRow}>
+                      <span style={styles.detailLabel}>
+                        End Date
+                      </span>
+
+                      <span style={styles.detailValue}>
+                        {formatDate(endDate)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={styles.descriptionSection}>
+                    <p style={styles.descriptionLabel}>
+                      Description
+                    </p>
+
+                    <p style={styles.description}>
+                      {medicine.description ||
+                        "No description provided."}
                     </p>
                   </div>
 
-                  <select
-                    value={medicine.status || "Active"}
-                    disabled={
-                      updatingMedicineId === medicine.id
-                    }
-                    onChange={(event) =>
-                      updateMedicineStatus(
-                        medicine,
-                        event.target.value
-                      )
-                    }
-                    style={getStatusStyle(medicine.status)}
-                  >
-                    <option value="Active">Active</option>
-                    <option value="Completed">
-                      Completed
-                    </option>
-                    <option value="Inactive">Inactive</option>
-                  </select>
-                </div>
+                  <div style={styles.cardButtons}>
+                    <button
+                      type="button"
+                      style={styles.editButton}
+                      onClick={() =>
+                        navigate(
+                          `/edit-medicine/${medicine.id}`
+                        )
+                      }
+                    >
+                      Edit
+                    </button>
 
-                <div style={styles.details}>
-                  <div style={styles.detailRow}>
-                    <span style={styles.detailLabel}>
-                      Reminder Time
-                    </span>
-
-                    <span style={styles.detailValue}>
-                      {formatTime(medicine.reminder_time)}
-                    </span>
-                  </div>
-
-                  <div style={styles.detailRow}>
-                    <span style={styles.detailLabel}>
-                      Start Date
-                    </span>
-
-                    <span style={styles.detailValue}>
-                      {formatDate(medicine.start_date)}
-                    </span>
-                  </div>
-
-                  <div style={styles.detailRow}>
-                    <span style={styles.detailLabel}>
-                      End Date
-                    </span>
-
-                    <span style={styles.detailValue}>
-                      {formatDate(medicine.end_date)}
-                    </span>
+                    <button
+                      type="button"
+                      style={styles.deleteButton}
+                      onClick={() =>
+                        openDeleteModal(medicine.id)
+                      }
+                    >
+                      Delete
+                    </button>
                   </div>
                 </div>
-
-                <div style={styles.descriptionSection}>
-                  <p style={styles.descriptionLabel}>
-                    Description
-                  </p>
-
-                  <p style={styles.description}>
-                    {medicine.description ||
-                      "No description provided."}
-                  </p>
-                </div>
-
-                <div style={styles.cardButtons}>
-                  <button
-                    type="button"
-                    style={styles.editButton}
-                    onClick={() =>
-                      navigate(
-                        `/edit-medicine/${medicine.id}`
-                      )
-                    }
-                  >
-                    Edit
-                  </button>
-
-                  <button
-                    type="button"
-                    style={styles.deleteButton}
-                    onClick={() =>
-                      openDeleteModal(medicine.id)
-                    }
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
       {showDeleteModal && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.modal}>
+        <div
+          style={styles.modalOverlay}
+          onClick={closeDeleteModal}
+        >
+          <div
+            style={styles.modal}
+            onClick={(event) => event.stopPropagation()}
+          >
             <h2 style={styles.modalTitle}>
               Delete Medicine
             </h2>
@@ -493,6 +650,7 @@ const styles = {
     backgroundColor: "#f5f7fb",
     padding: "40px 20px",
     fontFamily: "Arial, sans-serif",
+    boxSizing: "border-box",
   },
 
   container: {
@@ -513,7 +671,7 @@ const styles = {
   title: {
     margin: "0",
     color: "#1f2937",
-    fontSize: "36px",
+    fontSize: "clamp(28px, 5vw, 36px)",
     fontWeight: "700",
   },
 
@@ -560,15 +718,35 @@ const styles = {
     boxShadow: "0 6px 20px rgba(0, 0, 0, 0.06)",
   },
 
+  searchContainer: {
+    display: "flex",
+    gap: "10px",
+    alignItems: "center",
+    marginBottom: "16px",
+  },
+
   searchInput: {
+    flex: "1",
     width: "100%",
+    minWidth: "0",
     boxSizing: "border-box",
     padding: "13px 15px",
     border: "1px solid #d1d5db",
     borderRadius: "10px",
     fontSize: "15px",
     outline: "none",
-    marginBottom: "16px",
+    backgroundColor: "#ffffff",
+    color: "#1f2937",
+  },
+
+  clearSearchButton: {
+    border: "none",
+    backgroundColor: "#eef2ff",
+    color: "#4338ca",
+    padding: "12px 14px",
+    borderRadius: "9px",
+    cursor: "pointer",
+    fontWeight: "700",
   },
 
   filterButtons: {
@@ -594,6 +772,13 @@ const styles = {
     color: "#ffffff",
   },
 
+  resultCount: {
+    margin: "16px 0 0",
+    color: "#6b7280",
+    fontSize: "13px",
+    fontWeight: "600",
+  },
+
   messageBox: {
     backgroundColor: "#eef2ff",
     color: "#4338ca",
@@ -607,16 +792,18 @@ const styles = {
   grid: {
     display: "grid",
     gridTemplateColumns:
-      "repeat(auto-fit, minmax(310px, 1fr))",
+      "repeat(auto-fit, minmax(min(310px, 100%), 1fr))",
     gap: "22px",
   },
 
   card: {
+    minWidth: "0",
     backgroundColor: "#ffffff",
     borderRadius: "16px",
     padding: "22px",
     boxShadow: "0 6px 22px rgba(0, 0, 0, 0.07)",
     border: "1px solid #eef0f4",
+    boxSizing: "border-box",
   },
 
   cardHeader: {
@@ -627,11 +814,17 @@ const styles = {
     marginBottom: "20px",
   },
 
+  cardTitleSection: {
+    minWidth: "0",
+    flex: "1",
+  },
+
   medicineName: {
     margin: "0",
     color: "#1f2937",
     fontSize: "22px",
     fontWeight: "700",
+    overflowWrap: "anywhere",
   },
 
   dosage: {
@@ -639,9 +832,11 @@ const styles = {
     marginBottom: "0",
     color: "#6b7280",
     fontSize: "14px",
+    overflowWrap: "anywhere",
   },
 
   statusSelect: {
+    maxWidth: "125px",
     border: "none",
     borderRadius: "20px",
     padding: "8px 10px",
@@ -673,6 +868,7 @@ const styles = {
     color: "#1f2937",
     fontSize: "14px",
     fontWeight: "600",
+    textAlign: "right",
   },
 
   descriptionSection: {
@@ -692,6 +888,7 @@ const styles = {
     fontSize: "14px",
     lineHeight: "1.6",
     minHeight: "44px",
+    overflowWrap: "anywhere",
   },
 
   cardButtons: {
@@ -742,6 +939,17 @@ const styles = {
     fontSize: "15px",
   },
 
+  resetButton: {
+    border: "none",
+    backgroundColor: "#6366f1",
+    color: "#ffffff",
+    padding: "11px 18px",
+    borderRadius: "9px",
+    cursor: "pointer",
+    fontWeight: "700",
+    marginTop: "18px",
+  },
+
   modalOverlay: {
     position: "fixed",
     inset: "0",
@@ -760,6 +968,7 @@ const styles = {
     borderRadius: "16px",
     padding: "28px",
     boxShadow: "0 20px 50px rgba(0, 0, 0, 0.2)",
+    boxSizing: "border-box",
   },
 
   modalTitle: {
