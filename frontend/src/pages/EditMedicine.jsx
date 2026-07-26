@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { Pencil } from "lucide-react";
 
 function EditMedicine() {
   const navigate = useNavigate();
@@ -162,7 +163,9 @@ function EditMedicine() {
         </button>
 
         <div style={styles.header}>
-          <div style={styles.icon}>✏️</div>
+          <div style={styles.icon}>
+            <Pencil size={26} />
+          </div>
 
           <div>
             <h1 style={styles.title}>Edit Medicine</h1>

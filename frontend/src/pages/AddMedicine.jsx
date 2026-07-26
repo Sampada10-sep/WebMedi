@@ -93,8 +93,6 @@ function AddMedicine() {
         </button>
 
         <div style={styles.header}>
-          <div style={styles.icon}>💊</div>
-
           <div>
             <h1 style={styles.title}>Add Medicine</h1>
             <p style={styles.subtitle}>
@@ -109,17 +107,17 @@ function AddMedicine() {
               Medicine Name
             </label>
 
-              <input
+            <input
               id="medicineName"
               type="text"
               name="medicineName"
               value={formData.medicineName}
               onChange={handleChange}
-             placeholder="Example: Paracetamol"
-             className="medicine-input"
-             style={styles.input}
-               required
-               />
+              placeholder="Example: Paracetamol"
+              className="medicine-input"
+              style={styles.input}
+              required
+            />
           </div>
 
           <div style={styles.formGroup}>
@@ -128,16 +126,16 @@ function AddMedicine() {
             </label>
 
             <input
-            id="dosage"
-           type="text"
-            name="dosage"
-            value={formData.dosage}
-           onChange={handleChange}
-           placeholder="Example: 500 mg"
-           className="medicine-input"
-           style={styles.input}
-           required
-           />
+              id="dosage"
+              type="text"
+              name="dosage"
+              value={formData.dosage}
+              onChange={handleChange}
+              placeholder="Example: 500 mg"
+              className="medicine-input"
+              style={styles.input}
+              required
+            />
           </div>
 
           <div style={styles.formGroup}>
@@ -145,13 +143,13 @@ function AddMedicine() {
               Reminder Time
             </label>
 
-              <input
-            id="reminderTime"
-             type="time"
-            name="reminderTime"
-            value={formData.reminderTime}
+            <input
+              id="reminderTime"
+              type="time"
+              name="reminderTime"
+              value={formData.reminderTime}
               onChange={handleChange}
-             className="medicine-input"
+              className="medicine-input"
               style={styles.input}
               required
             />
@@ -164,15 +162,15 @@ function AddMedicine() {
               </label>
 
               <input
-              id="startDate"
-            type="date"
-            name="startDate"
-             value={formData.startDate}
-             onChange={handleChange}
-            className="medicine-input"
-            style={styles.input}
-            required
-            />
+                id="startDate"
+                type="date"
+                name="startDate"
+                value={formData.startDate}
+                onChange={handleChange}
+                className="medicine-input"
+                style={styles.input}
+                required
+              />
             </div>
 
             <div style={styles.formGroup}>
@@ -181,15 +179,15 @@ function AddMedicine() {
               </label>
 
               <input
-             id="endDate"
-             type="date"
-            name="endDate"
-           value={formData.endDate}
-            onChange={handleChange}
-            className="medicine-input"
-           style={styles.input}
-           required
-            />
+                id="endDate"
+                type="date"
+                name="endDate"
+                value={formData.endDate}
+                onChange={handleChange}
+                className="medicine-input"
+                style={styles.input}
+                required
+              />
             </div>
           </div>
 
@@ -199,13 +197,13 @@ function AddMedicine() {
             </label>
 
             <textarea
-           id="description"
-            className="medicine-textarea"
+              id="description"
               name="description"
               value={formData.description}
               onChange={handleChange}
               placeholder="Example: Take after food"
               rows="4"
+              className="medicine-textarea"
               style={styles.textarea}
             />
           </div>
@@ -257,21 +255,7 @@ const styles = {
   },
 
   header: {
-    display: "flex",
-    alignItems: "center",
-    gap: "15px",
     marginBottom: "30px",
-  },
-
-  icon: {
-    width: "55px",
-    height: "55px",
-    borderRadius: "14px",
-    backgroundColor: "#eef2ff",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    fontSize: "30px",
   },
 
   title: {
@@ -299,34 +283,35 @@ const styles = {
   },
 
   input: {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "13px",
-  border: "1px solid #d1d5db",
-  borderRadius: "9px",
-  fontSize: "16px",
-  outline: "none",
-  backgroundColor: "#3b3b3b",
-  color: "#ffffff",
-  WebkitTextFillColor: "#ffffff",
-  colorScheme: "dark",
-},
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "13px",
+    border: "1px solid #d1d5db",
+    borderRadius: "9px",
+    fontSize: "16px",
+    outline: "none",
+    backgroundColor: "#3b3b3b",
+    color: "#ffffff",
+    WebkitTextFillColor: "#ffffff",
+    colorScheme: "dark",
+  },
 
- textarea: {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "13px",
-  border: "1px solid #d1d5db",
-  borderRadius: "9px",
-  fontSize: "16px",
-  resize: "vertical",
-  outline: "none",
-  fontFamily: "Arial, sans-serif",
-  backgroundColor: "#3b3b3b",
-  color: "#ffffff",
-  WebkitTextFillColor: "#ffffff",
-  colorScheme: "dark",
-},
+  textarea: {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "13px",
+    border: "1px solid #d1d5db",
+    borderRadius: "9px",
+    fontSize: "16px",
+    resize: "vertical",
+    outline: "none",
+    fontFamily: "Arial, sans-serif",
+    backgroundColor: "#3b3b3b",
+    color: "#ffffff",
+    WebkitTextFillColor: "#ffffff",
+    colorScheme: "dark",
+  },
+
   dateRow: {
     display: "flex",
     gap: "18px",

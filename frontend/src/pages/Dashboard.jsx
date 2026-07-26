@@ -10,6 +10,16 @@ import { Doughnut } from "react-chartjs-2";
 import { useTheme } from "../context/ThemeContext";
 
 import {
+  Pill,
+  Bell,
+  BellOff,
+  Clock3,
+  BarChart3,
+  CircleCheck,
+  AlarmClock,
+} from "lucide-react";
+
+import {
   subscribeToPush,
   unsubscribeFromPush,
   sendTestPush,
@@ -159,7 +169,7 @@ function Dashboard() {
           snoozeTimerRef.current = null;
         }
 
-        setMessage("🔕 Medicine notifications turned off.");
+        setMessage("Medicine notifications turned off.");
 
         window.setTimeout(() => {
           setMessage("");
@@ -196,7 +206,7 @@ function Dashboard() {
       localStorage.setItem("medicine_notifications", "on");
 
       setMessage(
-        "🔔 Push notifications turned on successfully."
+        "Push notifications turned on successfully."
       );
 
       window.setTimeout(() => {
@@ -326,7 +336,7 @@ function Dashboard() {
           Notification.permission === "granted"
         ) {
           const notification = new Notification(
-            "💊 Medicine Reminder",
+            "Medicine Reminder",
             {
               body: `${
                 medicine.medicine_name || "Medicine"
@@ -379,7 +389,7 @@ function Dashboard() {
 
     const medicineToSnooze = dueMedicine;
     setDueMedicine(null);
-    setMessage("⏰ Reminder snoozed for 10 minutes.");
+    setMessage("Reminder snoozed for 10 minutes.");
 
     if (snoozeTimerRef.current) {
       window.clearTimeout(snoozeTimerRef.current);
@@ -395,7 +405,7 @@ function Dashboard() {
           "Notification" in window &&
           Notification.permission === "granted"
         ) {
-          new Notification("💊 Snoozed Medicine Reminder", {
+          new Notification("Snoozed Medicine Reminder", {
             body: `${
               medicineToSnooze.medicine_name || "Medicine"
             } — ${
@@ -657,9 +667,17 @@ function Dashboard() {
               />
             </span>
 
-            {notificationsEnabled
-              ? "🔔 Notifications ON"
-              : "🔕 Notifications OFF"}
+            {notificationsEnabled ? (
+              <>
+                <Bell size={17} strokeWidth={2} />
+                <span>Notifications ON</span>
+              </>
+            ) : (
+              <>
+                <BellOff size={17} strokeWidth={2} />
+                <span>Notifications OFF</span>
+              </>
+            )}
           </button>
 
           {notificationsEnabled &&
@@ -707,7 +725,9 @@ function Dashboard() {
             }}
           >
             <div style={styles.reminderPopupHeader}>
-              <div style={styles.reminderPopupIcon}>💊</div>
+              <div style={styles.reminderPopupIcon}>
+                <Pill size={23} strokeWidth={2} />
+              </div>
 
               <div>
                 <h3 style={styles.reminderPopupTitle}>
@@ -751,7 +771,8 @@ function Dashboard() {
                 style={styles.takenButton}
                 onClick={markReminderTaken}
               >
-                ✓ Taken
+                <CircleCheck size={17} strokeWidth={2} />
+                <span>Taken</span>
               </button>
 
               <button
@@ -759,7 +780,8 @@ function Dashboard() {
                 style={styles.snoozeButton}
                 onClick={snoozeReminder}
               >
-                ⏰ Snooze 10 min
+                <AlarmClock size={17} strokeWidth={2} />
+                <span>Snooze 10 min</span>
               </button>
             </div>
           </div>
@@ -819,7 +841,7 @@ function Dashboard() {
             }}
           >
             <div style={styles.totalIcon}>
-              💊
+              <Pill size={24} strokeWidth={2} />
             </div>
 
             <div>
@@ -853,7 +875,7 @@ function Dashboard() {
             }}
           >
             <div style={styles.reminderIcon}>
-              ⏰
+              <Clock3 size={24} strokeWidth={2} />
             </div>
 
             <div>
@@ -887,7 +909,7 @@ function Dashboard() {
             }}
           >
             <div style={styles.activeIcon}>
-              ✓
+              <CircleCheck size={25} strokeWidth={2.2} />
             </div>
 
             <div>
@@ -921,7 +943,7 @@ function Dashboard() {
             }}
           >
             <div style={styles.completedIcon}>
-              ✓
+              <CircleCheck size={25} strokeWidth={2.2} />
             </div>
 
             <div>
@@ -991,7 +1013,7 @@ function Dashboard() {
             ) : totalMedicines === 0 ? (
               <div style={styles.emptyChartBox}>
                 <div style={styles.emptyChartIcon}>
-                  📊
+                  <BarChart3 size={42} strokeWidth={1.8} />
                 </div>
 
                 <p
@@ -1120,7 +1142,7 @@ function Dashboard() {
             ) : todaysReminders.length === 0 ? (
               <div style={styles.emptyReminderBox}>
                 <div style={styles.emptyReminderIcon}>
-                  🎉
+                  <Clock3 size={42} strokeWidth={1.8} />
                 </div>
 
                 <h3
@@ -1156,7 +1178,7 @@ function Dashboard() {
                       }}
                     >
                       <div style={styles.medicineIcon}>
-                        💊
+                        <Pill size={20} strokeWidth={2} />
                       </div>
 
                       <div
@@ -1391,10 +1413,10 @@ const styles = {
     height: "52px",
     borderRadius: "12px",
     backgroundColor: "#ede9fe",
+    color: "#6d28d9",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: "24px",
   },
 
   reminderIcon: {
@@ -1402,11 +1424,12 @@ const styles = {
     height: "52px",
     borderRadius: "12px",
     backgroundColor: "#fef3c7",
+    color: "#d97706",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: "24px",
   },
+
 
   activeIcon: {
     width: "52px",
@@ -1552,7 +1575,7 @@ const styles = {
   },
 
   emptyChartIcon: {
-    fontSize: "48px",
+    color: "#64748b",
     marginBottom: "12px",
   },
 
@@ -1572,7 +1595,7 @@ const styles = {
   },
 
   emptyReminderIcon: {
-    fontSize: "50px",
+    color: "#64748b",
     marginBottom: "12px",
   },
 
@@ -1609,10 +1632,10 @@ const styles = {
     height: "43px",
     borderRadius: "10px",
     backgroundColor: "#ede9fe",
+    color: "#6d28d9",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: "21px",
     flexShrink: 0,
   },
 
@@ -1669,10 +1692,10 @@ const styles = {
     height: "46px",
     borderRadius: "12px",
     backgroundColor: "#ede9fe",
+    color: "#6d28d9",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: "23px",
     flexShrink: 0,
   },
 
@@ -1717,6 +1740,10 @@ const styles = {
     color: "#ffffff",
     cursor: "pointer",
     fontWeight: "bold",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "7px",
   },
 
   snoozeButton: {
@@ -1729,6 +1756,10 @@ const styles = {
     color: "#ffffff",
     cursor: "pointer",
     fontWeight: "bold",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "7px",
   },
 
 };

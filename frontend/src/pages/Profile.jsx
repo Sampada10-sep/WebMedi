@@ -1,6 +1,16 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
+import {
+  User,
+  Sun,
+  Moon,
+  Eye,
+  EyeOff,
+  ArrowLeft,
+  LogOut,
+  Trash2,
+} from "lucide-react";
 
 const CHANGE_PASSWORD_URL =
   "https://medireminder-backend-un9x.onrender.com/api/auth/change-password";
@@ -275,7 +285,9 @@ function Profile() {
                 style={styles.avatarImage}
               />
             ) : (
-              <div style={styles.defaultAvatar}>👤</div>
+              <div style={styles.defaultAvatar}>
+                <User size={54} strokeWidth={1.8} />
+              </div>
             )}
           </div>
 
@@ -296,7 +308,8 @@ function Profile() {
               style={styles.removePhotoButton}
               onClick={handleRemovePhoto}
             >
-              Remove Photo
+              <Trash2 size={16} />
+              <span>Remove Photo</span>
             </button>
           )}
         </div>
@@ -405,9 +418,17 @@ function Profile() {
           }}
           onClick={toggleTheme}
         >
-          {isDark
-            ? "☀️ Switch to Light Mode"
-            : "🌙 Switch to Dark Mode"}
+          {isDark ? (
+            <>
+              <Sun size={18} />
+              <span>Switch to Light Mode</span>
+            </>
+          ) : (
+            <>
+              <Moon size={18} />
+              <span>Switch to Dark Mode</span>
+            </>
+          )}
         </button>
 
         <button
@@ -495,7 +516,7 @@ function Profile() {
                     )
                   }
                 >
-                  {showCurrentPassword ? "Hide" : "Show"}
+                  {showCurrentPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                 </button>
               </div>
             </div>
@@ -543,7 +564,7 @@ function Profile() {
                     )
                   }
                 >
-                  {showNewPassword ? "Hide" : "Show"}
+                  {showNewPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                 </button>
               </div>
             </div>
@@ -593,7 +614,7 @@ function Profile() {
                     )
                   }
                 >
-                  {showConfirmPassword ? "Hide" : "Show"}
+                  {showConfirmPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                 </button>
               </div>
             </div>
@@ -621,7 +642,8 @@ function Profile() {
             style={styles.dashboardButton}
             onClick={() => navigate("/dashboard")}
           >
-            Back to Dashboard
+            <ArrowLeft size={17} />
+            <span>Back to Dashboard</span>
           </button>
 
           <button
@@ -629,7 +651,8 @@ function Profile() {
             style={styles.logoutButton}
             onClick={handleLogout}
           >
-            Logout
+            <LogOut size={17} />
+            <span>Logout</span>
           </button>
         </div>
       </div>
@@ -713,6 +736,9 @@ const styles = {
 
   removePhotoButton: {
     marginTop: "10px",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "7px",
     border: "none",
     backgroundColor: "transparent",
     color: "#ef4444",
@@ -780,6 +806,10 @@ const styles = {
 
   themeButton: {
     width: "100%",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: "8px",
     marginTop: "5px",
     marginBottom: "15px",
     padding: "13px",
@@ -834,6 +864,9 @@ const styles = {
 
   showPasswordButton: {
     padding: "0 12px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     border: "1px solid",
     borderRadius: "0 8px 8px 0",
     cursor: "pointer",
@@ -866,6 +899,10 @@ const styles = {
 
   dashboardButton: {
     flex: "1 1 180px",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: "8px",
     padding: "13px",
     border: "none",
     borderRadius: "9px",
@@ -877,6 +914,10 @@ const styles = {
 
   logoutButton: {
     flex: "1 1 120px",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: "8px",
     padding: "13px",
     border: "none",
     borderRadius: "9px",
